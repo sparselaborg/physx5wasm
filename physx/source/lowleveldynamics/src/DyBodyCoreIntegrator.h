@@ -36,6 +36,25 @@ namespace physx
 {
 namespace Dy
 {
+
+// OK: Quartic spline approximation of exponential function (accurate to about 4-5 decimal places)
+PX_FORCE_INLINE float quartic_exp(PxReal x)
+{
+    union { PxReal f; int32_t i; } reinterpreter;
+    reinterpreter.i = (int32_t)(12102203.0F*x) + 127*(1 << 23);
+    int32_t m = (reinterpreter.i >> 7) & 0xFFFF;
+    reinterpreter.i += (((((((((((3537*m) >> 16) + 13668)*m) >> 18) + 15817)*m) >> 14) - 80470)*m) >> 11);
+    return reinterpreter.f;
+}
+
+// OK: Exponential damping, where the damping coefficient is 1/time, and time is the number of seconds for the velocity to be halved
+PX_FORCE_INLINE float damping_multiplier(PxReal damping_coefficient, PxReal dt)
+{
+	// The std::pow() function is very expensive, so we use the identity pow(0.5, x) = exp(-x*ln(2))
+	// This allows us to use a fast exponential function approximation
+	return quartic_exp(-damping_coefficient * dt * 0.6931471805599453F); // Ln(2) = 0.693...
+}
+
 PX_FORCE_INLINE void bodyCoreComputeUnconstrainedVelocity
 	(const PxVec3& gravity, PxReal dt, PxReal linearDamping, PxReal angularDamping, PxReal accelScale, 
 	PxReal maxLinearVelocitySq, PxReal maxAngularVelocitySq, PxVec3& inOutLinearVelocity, PxVec3& inOutAngularVelocity,
@@ -45,11 +64,6 @@ PX_FORCE_INLINE void bodyCoreComputeUnconstrainedVelocity
 
 	PxVec3 linearVelocity = inOutLinearVelocity;
 	PxVec3 angularVelocity = inOutAngularVelocity;
-	
-	const PxReal linearDampingTimesDT=linearDamping*dt;
-	const PxReal angularDampingTimesDT=angularDamping*dt;
-	const PxReal oneMinusLinearDampingTimesDT=1.0f-linearDampingTimesDT;
-	const PxReal oneMinusAngularDampingTimesDT=1.0f-angularDampingTimesDT;
 
 	//TODO context-global gravity
 	if(!disableGravity)
@@ -59,10 +73,9 @@ PX_FORCE_INLINE void bodyCoreComputeUnconstrainedVelocity
 	}
 
 	//Apply damping.
-	const PxReal linVelMultiplier = physx::intrinsics::fsel(oneMinusLinearDampingTimesDT, oneMinusLinearDampingTimesDT, 0.0f);
-	const PxReal angVelMultiplier = physx::intrinsics::fsel(oneMinusAngularDampingTimesDT, oneMinusAngularDampingTimesDT, 0.0f);
-	linearVelocity*=linVelMultiplier;
-	angularVelocity*=angVelMultiplier;
+	// OK: Use exponential damping, so that damping is unaffected by the timestep. We use the equation multiplier = 0.5^(coefficient * dt)
+	linearVelocity *= damping_multiplier(linearDamping, dt);
+	angularVelocity *= damping_multiplier(angularDamping, dt);
 
 	// Clamp velocity
 	const PxReal linVelSq = linearVelocity.magnitudeSquared();
