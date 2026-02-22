@@ -164,28 +164,15 @@ static void setActive(PxU32& nbModified, const IG::IslandSim& islandSim, IG::Nod
 	}
 }
 
-// OK: Reset wake counters when bodies are worken up.
-static PX_FORCE_INLINE void resetWakeCounterForIslandActivation(BodySim& sim)
+static PX_FORCE_INLINE void wakeUpForIslandActivation(BodySim& sim)
 {
-	if (sim.isKinematic() == false)
-	{
-		BodyCore& bodyCore = sim.getBodyCore();
-		if (bodyCore.getWakeCounter() < ScInternalWakeCounterResetValue)
-		{
-			bodyCore.setWakeCounterFromSim(ScInternalWakeCounterResetValue);			
-			sim.getScene().updateBodySim(sim); // We update the body sim because we modified body core wake state directly.
-		}
-	}
+	sim.internalWakeUp(ScInternalWakeCounterResetValue);
+	sim.setActive(true);
 }
 
-// OK: Reset wake counters when bodies are worken up.
-static PX_FORCE_INLINE void resetWakeCounterForIslandActivation(ArticulationSim& sim)
+static PX_FORCE_INLINE void wakeUpForIslandActivation(ArticulationSim& sim)
 {
-	Sc::ArticulationCore& core = sim.getCore();
-	if (core.getWakeCounter() < ScInternalWakeCounterResetValue)
-	{
-		core.setWakeCounterInternal(ScInternalWakeCounterResetValue);
-	}
+	sim.internalWakeUp(ScInternalWakeCounterResetValue);
 }
 
 // OK: Reset wake counters when bodies are worken up.
@@ -204,8 +191,7 @@ static void wakeUpAndActivate(PxU32& nbModified, const IG::IslandSim& islandSim,
 			SimT* sim = SimAccessT::getSim(node);
 			if (sim)
 			{
-				resetWakeCounterForIslandActivation(*sim);
-				sim->setActive(true);
+				wakeUpForIslandActivation(*sim);
 				nbModified++;
 			}
 		}
