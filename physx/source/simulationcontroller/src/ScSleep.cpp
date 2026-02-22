@@ -164,6 +164,54 @@ static void setActive(PxU32& nbModified, const IG::IslandSim& islandSim, IG::Nod
 	}
 }
 
+// OK: Reset wake counters when bodies are worken up.
+static PX_FORCE_INLINE void resetWakeCounterForIslandActivation(BodySim& sim)
+{
+	if (sim.isKinematic() == false)
+	{
+		BodyCore& bodyCore = sim.getBodyCore();
+		if (bodyCore.getWakeCounter() < ScInternalWakeCounterResetValue)
+		{
+			bodyCore.setWakeCounterFromSim(ScInternalWakeCounterResetValue);			
+			sim.getScene().updateBodySim(sim); // We update the body sim because we modified body core wake state directly.
+		}
+	}
+}
+
+// OK: Reset wake counters when bodies are worken up.
+static PX_FORCE_INLINE void resetWakeCounterForIslandActivation(ArticulationSim& sim)
+{
+	Sc::ArticulationCore& core = sim.getCore();
+	if (core.getWakeCounter() < ScInternalWakeCounterResetValue)
+	{
+		core.setWakeCounterInternal(ScInternalWakeCounterResetValue);
+	}
+}
+
+// OK: Reset wake counters when bodies are worken up.
+template<class SimT, class SimAccessT>
+static void wakeUpAndActivate(PxU32& nbModified, const IG::IslandSim& islandSim, IG::Node::NodeType type)
+{
+	PxU32 nbToProcess = islandSim.getNbNodesToActivate(type);
+	const PxNodeIndex* indices = islandSim.getNodesToActivate(type);
+
+	while (nbToProcess--)
+	{
+		const IG::Node& node = islandSim.getNode(*indices++);
+		PX_ASSERT(node.mType == type);
+		if (node.isActive())
+		{
+			SimT* sim = SimAccessT::getSim(node);
+			if (sim)
+			{
+				resetWakeCounterForIslandActivation(*sim);
+				sim->setActive(true);
+				nbModified++;
+			}
+		}
+	}
+}
+
 #ifdef BATCHED
 namespace
 {
@@ -290,8 +338,13 @@ void Sc::Scene::wakeObjectsUp()
 	const IG::IslandSim& islandSim = mSimpleIslandManager->getAccurateIslandSim();
 
 	PxU32 nbBodiesWoken = 0;
-	setActive<BodySim, GetRigidSim, true>(nbBodiesWoken, islandSim, IG::Node::eRIGID_BODY_TYPE);
-	setActive<ArticulationSim, GetArticSim, true>(nbBodiesWoken, islandSim, IG::Node::eARTICULATION_TYPE);
+
+	// OK: Reset wake counters when bodies are worken up.
+	wakeUpAndActivate<BodySim, GetRigidSim>(nbBodiesWoken, islandSim, IG::Node::eRIGID_BODY_TYPE);
+	wakeUpAndActivate<ArticulationSim, GetArticSim>(nbBodiesWoken, islandSim, IG::Node::eARTICULATION_TYPE);
+
+	//setActive<BodySim, GetRigidSim, true>(nbBodiesWoken, islandSim, IG::Node::eRIGID_BODY_TYPE);
+	//setActive<ArticulationSim, GetArticSim, true>(nbBodiesWoken, islandSim, IG::Node::eARTICULATION_TYPE);
 
 #if PX_SUPPORT_GPU_PHYSX
 	setActive<DeformableSurfaceSim, GetDeformableSurfaceSim, true>(nbBodiesWoken, islandSim, IG::Node::eDEFORMABLE_SURFACE_TYPE);

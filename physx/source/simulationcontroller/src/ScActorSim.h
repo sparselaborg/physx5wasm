@@ -64,7 +64,7 @@ namespace Sc
 		};
 	};
 
-	static const PxReal ScInternalWakeCounterResetValue = 20.0f*0.02f;
+	static const PxReal ScInternalWakeCounterResetValue = 20.0f*0.01f; // OK: Change default wake counter reset value to use 20 frames at 100Hz.
 
 	class Interaction;
 	class ElementSim;
