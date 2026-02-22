@@ -2240,13 +2240,6 @@ void Sc::Scene::afterIntegration(PxBaseTask* continuation)
 			{
 				PxsRigidBody* rigid = getRigidBodyFromIG(islandSim, deactivatingIndices[i]);
 				BodySim* bodySim = reinterpret_cast<BodySim*>(reinterpret_cast<PxU8*>(rigid) - rigidBodyOffset);
-
-				if (bodySim->isActive())
-				{
-					rigid->clearAllFrameFlags();
-					continue;
-				}
-
 				//we need to set the rigid body back to the previous pose for the deactivated objects. This emulates the previous behavior where island gen ran before the solver, ensuring
 				//that bodies that should be deactivated this frame never reach the solver. We now run the solver in parallel with island gen, so objects that should be deactivated this frame
 				//still reach the solver and are integrated. However, on the frame when they should be deactivated, we roll back to their state at the beginning of the frame to ensure that the
