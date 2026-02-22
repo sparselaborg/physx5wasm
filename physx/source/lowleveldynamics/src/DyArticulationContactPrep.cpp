@@ -451,6 +451,7 @@ void setupFinalizeExtSolverContacts(
 
 			const FloatV orthoThreshold = FLoad(0.70710678f);
 			const FloatV p1 = FLoad(0.0001f);
+			const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
 			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 			const FloatV normalX = V3GetX(normal);
 			const FloatV normalY = V3GetY(normal);
@@ -460,7 +461,21 @@ void setupFinalizeExtSolverContacts(
 			Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
 			Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
 
-			Vec3V t0 = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
+			Vec3V patchTargetVel = V3Zero();
+			for(PxU32 patch = c.correlationListHeads[i]; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
+			{
+				const PxU32 patchContactCount = c.contactPatches[patch].count;
+				const PxContactPoint* patchContacts = buffer + c.contactPatches[patch].start;
+				for(PxU32 j = 0; j < patchContactCount; j++)
+				{
+					patchTargetVel = V3Add(patchTargetVel, V3LoadA(patchContacts[j].targetVel));
+				}
+			}
+			patchTargetVel = V3Scale(patchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
+			const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
+			const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
+			const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
+			Vec3V t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
 			t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
 			t0 = V3Normalize(t0);
 
@@ -489,6 +504,15 @@ void setupFinalizeExtSolverContacts(
 				Vec3V ra = V3LoadU(bodyFrame0.q.rotate(frictionPatch.body0Anchors[j]));
 				Vec3V rb = V3LoadU(bodyFrame1.q.rotate(frictionPatch.body1Anchors[j]));
 				Vec3V error = V3Sub(V3Add(ra, frame0p), V3Add(rb, frame1p));
+				const PxU32 index = c.contactPatches[c.correlationListHeads[i]].start;
+				const Vec3V tvel = V3LoadA(buffer[index].targetVel);
+				const FloatV targetVelT0Abs = FAbs(V3Dot(tvel, t0));
+				const FloatV targetVelT1Abs = FAbs(V3Dot(tvel, t1));
+				const FloatV targetVelTangentSq = FAdd(FMul(targetVelT0Abs, targetVelT0Abs), FMul(targetVelT1Abs, targetVelT1Abs));
+				const BoolV hasAnisotropicDirection = FIsGrtr(targetVelTangentSq, anisotropicVelocityThresholdSq);
+				const BoolV useT0AsPrimaryAxis = FIsGrtrOrEq(targetVelT0Abs, targetVelT1Abs);
+				const FloatV anisotropicFrictionScaleT0 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, FOne(), zero), FOne());
+				const FloatV anisotropicFrictionScaleT1 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, zero, FOne()), FOne());
 
 				{
 					Vec3V raXn = V3Cross(ra, t0Cross);
@@ -503,10 +527,9 @@ void setupFinalizeExtSolverContacts(
 					FloatV resp = FAdd(cfm, getImpulseResponse(b0, resp0, deltaV0, d0, angD0,
 															 b1, resp1, deltaV1, d1, angD1, reinterpret_cast<Cm::SpatialVectorV*>(Z)));
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero);
+					const FloatV velMultiplier = FMul(anisotropicFrictionScaleT0, FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero));
 
-					const PxU32 index = c.contactPatches[c.correlationListHeads[i]].start;
-					FloatV targetVel = V3Dot(V3LoadA(buffer[index].targetVel), t0);
+					FloatV targetVel = V3Dot(tvel, t0);
 
 					if(b0.mLinkIndex == PxSolverConstraintDesc::RIGID_BODY)
 						targetVel = FSub(targetVel, b0.projectVelocity(t0, raXn));
@@ -539,10 +562,9 @@ void setupFinalizeExtSolverContacts(
 
 					//const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FMul(p8, FRecip(resp)), zero);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero);
+					const FloatV velMultiplier = FMul(anisotropicFrictionScaleT1, FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero));
 
-					const PxU32 index = c.contactPatches[c.correlationListHeads[i]].start;
-					FloatV targetVel = V3Dot(V3LoadA(buffer[index].targetVel), t1);
+					FloatV targetVel = V3Dot(tvel, t1);
 
 					if(b0.mLinkIndex == PxSolverConstraintDesc::RIGID_BODY)
 						targetVel = FSub(targetVel, b0.projectVelocity(t1, raXn));
