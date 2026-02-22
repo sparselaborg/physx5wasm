@@ -577,6 +577,10 @@ namespace Dy
 
 			FloatV maxPenetration = FMax();
 			const BoolV accelSpring = BLoad(!!(contactBase0->materialFlags & PxMaterialFlag::eCOMPLIANT_ACCELERATION_SPRING));
+			const bool hasAnisotropicFriction =
+				(contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) ||
+				(contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction);
+			Vec3V accumulatedPatchTargetVel = V3Zero();
 
 			for (PxU32 patch = c.correlationListHeads[i];
 				patch != CorrelationBuffer::LIST_END;
@@ -601,6 +605,9 @@ namespace Dy
 						invDtp8, invDt, totalDt, invTotalDt, restDistance, restitution,
 						bounceThreshold, contact, *solverContact,
 						ccdMaxSeparation, isKinematic0, isKinematic1, offsetSlop, dt, damping, accelSpring));
+
+					if(hasAnisotropicFriction)
+						accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
 				}
 
 				ptr = p;
@@ -612,6 +619,8 @@ namespace Dy
 
 			const PxReal staticFriction = contactBase0->staticFriction;
 			const PxReal dynamicFriction = contactBase0->dynamicFriction;
+			const PxReal anisotropicStaticFriction = contactBase0->anisotropicStaticFriction;
+			const PxReal anisotropicDynamicFriction = contactBase0->anisotropicDynamicFriction;
 			const bool disableFriction = !!(contactBase0->materialFlags & PxMaterialFlag::eDISABLE_FRICTION);
 			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetX(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(staticFriction));
 			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetY(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(dynamicFriction));
@@ -636,6 +645,7 @@ namespace Dy
 				const FloatV orthoThreshold = FLoad(0.70710678f);
 				const FloatV p1 = FLoad(0.0001f);
 				const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
+				const PxReal anisotropicDynamicRatio = dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f;
 				// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 				const FloatV normalX = V3GetX(normal);
 				const FloatV normalY = V3GetY(normal);
@@ -645,21 +655,15 @@ namespace Dy
 				const Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
 				const Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
 
-				Vec3V patchTargetVel = V3Zero();
-				for(PxU32 patch = c.correlationListHeads[i]; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-				{
-					const PxU32 patchContactCount = c.contactPatches[patch].count;
-					const PxContactPoint* patchContacts = buffer + c.contactPatches[patch].start;
-					for(PxU32 j = 0; j < patchContactCount; j++)
-					{
-						patchTargetVel = V3Add(patchTargetVel, V3LoadA(patchContacts[j].targetVel));
-					}
-				}
-				patchTargetVel = V3Scale(patchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
-				const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
 				const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
-				const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
-				Vec3V t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
+				Vec3V t0 = relVelSubNorVel;
+				if(hasAnisotropicFriction)
+				{
+					const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
+					const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
+					const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
+					t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
+				}
 				t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
 				t0 = V3Normalize(t0);
 
@@ -692,6 +696,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
+				const PxReal frictionScaleT0 = frictionScale * anisotropicDynamicRatio;
+				const PxReal frictionScaleT1 = frictionScale;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{
@@ -713,14 +719,6 @@ namespace Dy
 					index = index == 0xFFFF ? c.contactPatches[c.correlationListHeads[i]].start : index;
 
 					const Vec3V tvel = V3LoadA(buffer[index].targetVel);
-					const FloatV targetVelT0Abs = FAbs(V3Dot(tvel, t0));
-					const FloatV targetVelT1Abs = FAbs(V3Dot(tvel, t1));
-					const FloatV targetVelTangentSq = FAdd(FMul(targetVelT0Abs, targetVelT0Abs), FMul(targetVelT1Abs, targetVelT1Abs));
-					const BoolV hasAnisotropicDirection = FIsGrtr(targetVelTangentSq, anisotropicVelocityThresholdSq);
-					const BoolV useT0AsPrimaryAxis = FIsGrtrOrEq(targetVelT0Abs, targetVelT1Abs);
-					const FloatV anisotropicFrictionScaleT0 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, FOne(), zero), FOne());
-					const FloatV anisotropicFrictionScaleT1 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, zero, FOne()), FOne());
-
 					const Vec3V error = V3Add(V3Sub(ra, rb), relTr);
 
 					{
@@ -738,7 +736,7 @@ namespace Dy
 
 						const FloatV unitResponse = FAdd(resp0, resp1);
 
-						const FloatV velMultiplier = FMul(anisotropicFrictionScaleT0, FSel(FIsGrtr(unitResponse, zero), FDiv(p8, unitResponse), zero));
+						const FloatV velMultiplier = FSel(FIsGrtr(unitResponse, zero), FDiv(p8, unitResponse), zero);
 						//const FloatV velMultiplier = FSel(FIsGrtr(unitResponse, zero), FRecip(unitResponse), zero);
 
 						FloatV targetVel = V3Dot(tvel, t0);
@@ -756,7 +754,7 @@ namespace Dy
 						f0->raXnI_targetVelW = V4SetW(raXnInertia, targetVel);
 						f0->rbXnI_velMultiplierW = V4SetW(rbXnInertia, velMultiplier);
 						f0->appliedForce = 0.f;
-						f0->frictionScale = frictionScale;
+						f0->frictionScale = frictionScaleT0;
 						f0->biasScale = frictionBiasScale;
 					}
 
@@ -777,7 +775,7 @@ namespace Dy
 
 						const FloatV unitResponse = FAdd(resp0, resp1);
 
-						const FloatV velMultiplier = FMul(anisotropicFrictionScaleT1, FSel(FIsGrtr(unitResponse, zero), FDiv(p8, unitResponse), zero));
+						const FloatV velMultiplier = FSel(FIsGrtr(unitResponse, zero), FDiv(p8, unitResponse), zero);
 						//const FloatV velMultiplier = FSel(FIsGrtr(unitResponse, zero), FRecip(unitResponse), zero);
 
 						if (isKinematic0)
@@ -793,7 +791,7 @@ namespace Dy
 						f1->raXnI_targetVelW = V4SetW(raXnInertia, targetVel);
 						f1->rbXnI_velMultiplierW = V4SetW(rbXnInertia, velMultiplier);
 						f1->appliedForce = 0.f;
-						f1->frictionScale = frictionScale;
+						f1->frictionScale = frictionScaleT1;
 						f1->biasScale = frictionBiasScale;
 					}
 				}
@@ -1075,10 +1073,17 @@ namespace Dy
 			PX_ASSERT(frictionPatch.anchorCount <= 2);  //0==anchorCount is allowed if all the contacts in the manifold have a large offset. 
 
 			const PxContactPoint* contactBase0 = buffer + c.contactPatches[c.correlationListHeads[i]].start;
+			const PxReal staticFriction = contactBase0->staticFriction;
+			const PxReal dynamicFriction = contactBase0->dynamicFriction;
+			const PxReal anisotropicStaticFriction = contactBase0->anisotropicStaticFriction;
+			const PxReal anisotropicDynamicFriction = contactBase0->anisotropicDynamicFriction;
+			const bool hasAnisotropicFriction = (anisotropicStaticFriction != staticFriction) || (anisotropicDynamicFriction != dynamicFriction);
+			const PxReal anisotropicDynamicRatio = dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f;
+			Vec3V accumulatedPatchTargetVel = V3Zero();
 	
 			const bool disableStrongFriction = !!(contactBase0->materialFlags & PxMaterialFlag::eDISABLE_FRICTION);
-			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetX(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(contactBase0->staticFriction));
-			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetY(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(contactBase0->dynamicFriction));
+			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetX(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(staticFriction));
+			staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetY(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(dynamicFriction));
 
 			const PxReal frictionBiasScale = disableStrongFriction ? 0.f : invDtF32 * 0.8f;
 
@@ -1142,6 +1147,9 @@ namespace Dy
 						cfm, v0, v1, offsetSlop, norVel0, norVel1);
 					accumulatedImpulse = FAdd(accumulatedImpulse, deltaF);
 
+					if(hasAnisotropicFriction)
+						accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
+
 					maxPenetration = FMin(FLoad(contact.separation), maxPenetration);
 				}
 
@@ -1175,21 +1183,15 @@ namespace Dy
 				Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
 				Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
 
-				Vec3V patchTargetVel = V3Zero();
-				for(PxU32 patch = c.correlationListHeads[i]; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-				{
-					const PxU32 patchContactCount = c.contactPatches[patch].count;
-					const PxContactPoint* patchContacts = buffer + c.contactPatches[patch].start;
-					for(PxU32 j = 0; j < patchContactCount; j++)
-					{
-						patchTargetVel = V3Add(patchTargetVel, V3LoadA(patchContacts[j].targetVel));
-					}
-				}
-				patchTargetVel = V3Scale(patchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
-				const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
 				const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
-				const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
-				Vec3V t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
+				Vec3V t0 = relVelSubNorVel;
+				if(hasAnisotropicFriction)
+				{
+					const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
+					const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
+					const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
+					t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
+				}
 				t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
 				t0 = V3Normalize(t0);
 
@@ -1209,6 +1211,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
+				const PxReal frictionScaleT0 = frictionScale * anisotropicDynamicRatio;
+				const PxReal frictionScaleT1 = frictionScale;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{
@@ -1222,13 +1226,6 @@ namespace Dy
 					Vec3V error = V3Sub(V3Add(ra, bodyFrame0p), V3Add(rb,bodyFrame1p));
 					PxU32 index = c.contactPatches[c.correlationListHeads[i]].start;
 					const Vec3V tvel = V3LoadA(buffer[index].targetVel);
-					const FloatV targetVelT0Abs = FAbs(V3Dot(tvel, t0));
-					const FloatV targetVelT1Abs = FAbs(V3Dot(tvel, t1));
-					const FloatV targetVelTangentSq = FAdd(FMul(targetVelT0Abs, targetVelT0Abs), FMul(targetVelT1Abs, targetVelT1Abs));
-					const BoolV hasAnisotropicDirection = FIsGrtr(targetVelTangentSq, anisotropicVelocityThresholdSq);
-					const BoolV useT0AsPrimaryAxis = FIsGrtrOrEq(targetVelT0Abs, targetVelT1Abs);
-					const FloatV anisotropicFrictionScaleT0 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, FOne(), zero), FOne());
-					const FloatV anisotropicFrictionScaleT1 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, zero, FOne()), FOne());
 
 					{
 						Vec3V raXn = V3Cross(ra, t0Cross);
@@ -1243,7 +1240,7 @@ namespace Dy
 						FloatV resp = getImpulseResponse(b0, resp0, deltaV0, d0, angD0,
 							b1, resp1, deltaV1, d1, angD1, false);
 
-						const FloatV velMultiplier = FMul(anisotropicFrictionScaleT0, FSel(FIsGrtr(resp, FEps()), FDiv(p8, FAdd(cfm, resp)), zero));
+						const FloatV velMultiplier = FSel(FIsGrtr(resp, FEps()), FDiv(p8, FAdd(cfm, resp)), zero);
 
 						FloatV targetVel = V3Dot(tvel, t0);
 
@@ -1261,7 +1258,7 @@ namespace Dy
 						f0->linDeltaVB = deltaV1.linear;
 						f0->angDeltaVA = deltaV0.angular;
 						f0->angDeltaVB = deltaV1.angular;
-						f0->frictionScale = frictionScale;
+						f0->frictionScale = frictionScaleT0;
 					}
 
 					{
@@ -1278,7 +1275,7 @@ namespace Dy
 						FloatV resp = getImpulseResponse(b0, resp0, deltaV0, d0, angD0,
 							b1, resp1, deltaV1, d1, angD1, false);
 
-						const FloatV velMultiplier = FMul(anisotropicFrictionScaleT1, FSel(FIsGrtr(resp, FEps()), FDiv(p8, FAdd(cfm, resp)), zero));
+						const FloatV velMultiplier = FSel(FIsGrtr(resp, FEps()), FDiv(p8, FAdd(cfm, resp)), zero);
 
 						FloatV targetVel = V3Dot(tvel, t1);
 
@@ -1296,7 +1293,7 @@ namespace Dy
 						f1->linDeltaVB = deltaV1.linear;
 						f1->angDeltaVA = deltaV0.angular;
 						f1->angDeltaVB = deltaV1.angular;
-						f1->frictionScale = frictionScale;
+						f1->frictionScale = frictionScaleT1;
 					}
 				}
 

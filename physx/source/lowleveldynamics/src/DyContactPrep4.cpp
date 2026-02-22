@@ -670,6 +670,20 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 			const Vec4V dynamicFriction = V4LoadXYZW(contactBase0->dynamicFriction*coefficient0, contactBase1->dynamicFriction*coefficient1,
 				contactBase2->dynamicFriction*coefficient2, contactBase3->dynamicFriction*coefficient3);
 
+			const Vec4V anisotropicDynamicScale = V4LoadXYZW(
+				contactBase0->dynamicFriction > 0.f ? (contactBase0->anisotropicDynamicFriction / contactBase0->dynamicFriction) : 1.f,
+				contactBase1->dynamicFriction > 0.f ? (contactBase1->anisotropicDynamicFriction / contactBase1->dynamicFriction) : 1.f,
+				contactBase2->dynamicFriction > 0.f ? (contactBase2->anisotropicDynamicFriction / contactBase2->dynamicFriction) : 1.f,
+				contactBase3->dynamicFriction > 0.f ? (contactBase3->anisotropicDynamicFriction / contactBase3->dynamicFriction) : 1.f);
+
+			const BoolV hasAnisotropicFriction = V4IsGrtr(
+				V4LoadXYZW(
+					(contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) || (contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction) ? 1.f : 0.f,
+					(contactBase1->anisotropicStaticFriction != contactBase1->staticFriction) || (contactBase1->anisotropicDynamicFriction != contactBase1->dynamicFriction) ? 1.f : 0.f,
+					(contactBase2->anisotropicStaticFriction != contactBase2->staticFriction) || (contactBase2->anisotropicDynamicFriction != contactBase2->dynamicFriction) ? 1.f : 0.f,
+					(contactBase3->anisotropicStaticFriction != contactBase3->staticFriction) || (contactBase3->anisotropicDynamicFriction != contactBase3->dynamicFriction) ? 1.f : 0.f),
+				zero);
+
 			PX_ASSERT(totalContacts == contactCount);
 			header->dynamicFriction = dynamicFriction;
 			header->staticFriction = staticFriction;
@@ -760,7 +774,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 				const Vec4V targetVelSubNorVelY = V4NegMulSub(normalY, basisTargetNorVel, basisTargetVelY);
 				const Vec4V targetVelSubNorVelZ = V4NegMulSub(normalZ, basisTargetNorVel, basisTargetVelZ);
 				const Vec4V lenSqTargetVelSubNorVel = V4MulAdd(targetVelSubNorVelX, targetVelSubNorVelX, V4MulAdd(targetVelSubNorVelY, targetVelSubNorVelY, V4Mul(targetVelSubNorVelZ, targetVelSubNorVelZ)));
-				const BoolV useTargetVelForTangentBasis = V4IsGrtr(lenSqTargetVelSubNorVel, anisotropicVelocityThresholdSq4);
+				const BoolV useTargetVelForTangentBasis = BAnd(hasAnisotropicFriction, V4IsGrtr(lenSqTargetVelSubNorVel, anisotropicVelocityThresholdSq4));
 				const Vec4V t0BasisX = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelX, vrelSubNorVelX);
 				const Vec4V t0BasisY = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelY, vrelSubNorVelY);
 				const Vec4V t0BasisZ = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelZ, vrelSubNorVelZ);
@@ -918,11 +932,6 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 					PX_TRANSPOSE_44_34(targetVel0, targetVel1, targetVel2, targetVel3, targetVelX, targetVelY, targetVelZ);
 					const Vec4V targetVelT0 = V4MulAdd(t0Z, targetVelZ, V4MulAdd(t0Y, targetVelY, V4Mul(t0X, targetVelX)));
 					const Vec4V targetVelT1 = V4MulAdd(t1Z, targetVelZ, V4MulAdd(t1Y, targetVelY, V4Mul(t1X, targetVelX)));
-					const BoolV hasAnisotropicDirection = V4IsGrtr(V4MulAdd(targetVelT0, targetVelT0, V4Mul(targetVelT1, targetVelT1)), V4Splat(FLoad(1e-6f)));
-					const BoolV useT0AsPrimaryAxis = V4IsGrtrOrEq(V4Abs(targetVelT0), V4Abs(targetVelT1));
-					const Vec4V anisotropicFrictionScaleT0 = V4Sel(hasAnisotropicDirection, V4Sel(useT0AsPrimaryAxis, one, zero), one);
-					const Vec4V anisotropicFrictionScaleT1 = V4Sel(hasAnisotropicDirection, V4Sel(useT0AsPrimaryAxis, zero, one), one);
-
 					{
 						Vec4V raXnX = V4NegMulSub(raZ, t0Y, V4Mul(raY, t0Z));
 						Vec4V raXnY = V4NegMulSub(raX, t0Z, V4Mul(raZ, t0X));
@@ -1002,7 +1011,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 							vrel = V4Sub(vrel, dotRbXnAngVel1);
 						}
 
-						const Vec4V velMultiplier = V4Mul(anisotropicFrictionScaleT0, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(anisotropicDynamicScale, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
 
 						Vec4V bias = V4Scale(V4MulAdd(t0Z, errorZ, V4MulAdd(t0Y, errorY, V4Mul(t0X, errorX))), invDt);
 
@@ -1097,7 +1106,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 							vrel = V4Sub(vrel, dotRbXnAngVel1);
 						}
 
-						const Vec4V velMultiplier = V4Mul(anisotropicFrictionScaleT1, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
 
 						Vec4V bias = V4Scale(V4MulAdd(t1Z, errorZ, V4MulAdd(t1Y, errorY, V4Mul(t1X, errorX))), invDt);
 

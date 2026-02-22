@@ -208,6 +208,50 @@ public:
 	virtual		PxReal	getStaticFriction() const = 0;
 
 	/**
+	\brief Sets the coefficient of anisotropic dynamic friction (used for the primary anisotropic tangent axis).
+
+	The coefficient should be in [0, PX_MAX_F32).
+
+	<b>Sleeping:</b> Does <b>NOT</b> wake any actors which may be affected.
+
+	\param[in] coef Coefficient of anisotropic dynamic friction. <b>Range:</b> [0, PX_MAX_F32)
+
+	\see getAnisotropicDynamicFriction()
+	*/
+	virtual		void	setAnisotropicDynamicFriction(PxReal coef) = 0;
+
+	/**
+	\brief Retrieves the anisotropic dynamic friction coefficient.
+
+	\return The coefficient of anisotropic dynamic friction.
+
+	\see setAnisotropicDynamicFriction
+	*/
+	virtual		PxReal	getAnisotropicDynamicFriction() const = 0;
+
+	/**
+	\brief Sets the coefficient of anisotropic static friction (used for the primary anisotropic tangent axis).
+
+	The coefficient should be in [0, PX_MAX_F32).
+
+	<b>Sleeping:</b> Does <b>NOT</b> wake any actors which may be affected.
+
+	\param[in] coef Coefficient of anisotropic static friction. <b>Range:</b> [0, PX_MAX_F32)
+
+	\see getAnisotropicStaticFriction()
+	*/
+	virtual		void	setAnisotropicStaticFriction(PxReal coef) = 0;
+
+	/**
+	\brief Retrieves the anisotropic static friction coefficient.
+
+	\return The coefficient of anisotropic static friction.
+
+	\see setAnisotropicStaticFriction
+	*/
+	virtual		PxReal	getAnisotropicStaticFriction() const = 0;
+
+	/**
 	\brief Sets the coefficient of restitution or the spring stiffness for compliant contact
 	
 	A coefficient of 0 makes the object bounce as little as possible, higher values up to 1.0 result in more bounce.

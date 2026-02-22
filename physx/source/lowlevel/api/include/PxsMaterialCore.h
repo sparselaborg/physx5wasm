@@ -40,6 +40,8 @@ struct PxsMaterialData
 {
 	PxReal			dynamicFriction;
 	PxReal			staticFriction;
+	PxReal			anisotropicDynamicFriction;
+	PxReal			anisotropicStaticFriction;
 	PxReal			restitution;
 	PxReal			damping;
 	PxMaterialFlags	flags;
@@ -50,6 +52,8 @@ struct PxsMaterialData
 	PxsMaterialData() :
 		dynamicFriction	(0.0f),
 		staticFriction	(0.0f),
+		anisotropicDynamicFriction(0.0f),
+		anisotropicStaticFriction(0.0f),
 		restitution		(0.0f),
 		damping			(0.0f),
 		flags			(PxMaterialFlag::eIMPROVED_PATCH_FRICTION),

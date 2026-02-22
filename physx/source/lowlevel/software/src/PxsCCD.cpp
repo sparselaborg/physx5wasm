@@ -1111,6 +1111,8 @@ public:
 
 						patch->dynamicFriction = pair.mDynamicFriction;
 						patch->staticFriction = pair.mStaticFriction;
+						patch->anisotropicDynamicFriction = pair.mDynamicFriction;
+						patch->anisotropicStaticFriction = pair.mStaticFriction;
 						patch->materialIndex0 = pair.mMaterialIndex0;
 						patch->materialIndex1 = pair.mMaterialIndex1;
 
@@ -1130,6 +1132,8 @@ public:
 						point->materialIndex1 = pair.mMaterialIndex1;
 						point->dynamicFriction = pair.mDynamicFriction;
 						point->staticFriction = pair.mStaticFriction;
+						point->anisotropicDynamicFriction = pair.mDynamicFriction;
+						point->anisotropicStaticFriction = pair.mStaticFriction;
 						point->restitution = pair.mRestitution;
 						point->separation = 0.0f;
 						point->maxImpulse = PX_MAX_REAL;
@@ -1934,6 +1938,8 @@ void PxsCCDContext::postCCDAdvance(PxBaseTask* /*continuation*/)
 					cp.restitution = p.mRestitution;
 					cp.dynamicFriction = p.mDynamicFriction;
 					cp.staticFriction = p.mStaticFriction;
+					cp.anisotropicDynamicFriction = p.mDynamicFriction;
+					cp.anisotropicStaticFriction = p.mStaticFriction;
 					cp.targetVel = PxVec3(0.0f);
 					cp.maxImpulse = PX_MAX_REAL;
 					

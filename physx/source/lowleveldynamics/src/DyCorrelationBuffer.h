@@ -54,6 +54,8 @@ struct CorrelationBuffer
 
 		PxReal		staticFriction;
 		PxReal		dynamicFriction;
+		PxReal		anisotropicStaticFriction;
+		PxReal		anisotropicDynamicFriction;
 		PxReal		restitution;
 		PxU16		start;
 		PxU16		next;

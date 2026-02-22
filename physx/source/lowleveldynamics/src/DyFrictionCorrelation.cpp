@@ -41,7 +41,9 @@ namespace physx
 {
 namespace Dy
 {
-static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData& patch, PxU16 index, PxReal restitution, PxReal staticFriction, PxReal dynamicFriction,
+static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData& patch, PxU16 index, PxReal restitution,
+	PxReal staticFriction, PxReal dynamicFriction,
+	PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction,
 	PxU8 flags)
 {
 	patch.start = index;
@@ -51,12 +53,12 @@ static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData
 	patch.restitution = restitution;
 	patch.staticFriction = staticFriction;
 	patch.dynamicFriction = dynamicFriction;
+	patch.anisotropicStaticFriction = anisotropicStaticFriction;
+	patch.anisotropicDynamicFriction = anisotropicDynamicFriction;
 }
 
 bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
 {
-	normalTolerance = 2.0f;
-
 	// PT: this rewritten version below doesn't have LHS
 
 	PxU32 contactPatchCount = fb.contactPatchCount;
@@ -68,7 +70,9 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 		const PxContactPoint* PX_RESTRICT contacts = cb;
 
 		initContactPatch(fb.contactPatches[contactPatchCount++], PxTo16(0), contacts[0].restitution, 
-			contacts[0].staticFriction, contacts[0].dynamicFriction, PxU8(contacts[0].materialFlags));
+			contacts[0].staticFriction, contacts[0].dynamicFriction,
+			contacts[0].anisotropicStaticFriction, contacts[0].anisotropicDynamicFriction,
+			PxU8(contacts[0].materialFlags));
 
 		Vec4V minV = V4LoadA(&contacts[0].point.x);
 		Vec4V maxV = minV;
@@ -80,9 +84,15 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 		{
 			const PxContactPoint& curContact = contacts[i];
 			const PxContactPoint& preContact = contacts[patchIndex];
+			const bool hasAnisotropicFriction =
+				(curContact.anisotropicStaticFriction != curContact.staticFriction) ||
+				(curContact.anisotropicDynamicFriction != curContact.dynamicFriction);
 
-			if(curContact.staticFriction == preContact.staticFriction
+			if(!hasAnisotropicFriction
+				&& curContact.staticFriction == preContact.staticFriction
 				&& curContact.dynamicFriction == preContact.dynamicFriction
+				&& curContact.anisotropicStaticFriction == preContact.anisotropicStaticFriction
+				&& curContact.anisotropicDynamicFriction == preContact.anisotropicDynamicFriction
 				&& curContact.restitution == preContact.restitution
 				&& curContact.normal.dot(preContact.normal)>=normalTolerance)
 			{
@@ -103,7 +113,9 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 				currentPatchData = fb.contactPatches + contactPatchCount;
 
 				initContactPatch(fb.contactPatches[contactPatchCount++], PxTo16(i), curContact.restitution,
-					curContact.staticFriction, curContact.dynamicFriction, PxU8(curContact.materialFlags));
+					curContact.staticFriction, curContact.dynamicFriction,
+					curContact.anisotropicStaticFriction, curContact.anisotropicDynamicFriction,
+					PxU8(curContact.materialFlags));
 
 				minV = V4LoadA(&curContact.point.x);
 				maxV = minV;
@@ -118,8 +130,10 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 	return true;
 }
 
-static PX_FORCE_INLINE void initFrictionPatch(FrictionPatch& p, const PxVec3& worldNormal, const PxTransform& body0Pose, const PxTransform& body1Pose, 
-	PxReal restitution, PxReal staticFriction, PxReal dynamicFriction, PxU8 materialFlags)
+static PX_FORCE_INLINE void initFrictionPatch(FrictionPatch& p, const PxVec3& worldNormal, const PxTransform& body0Pose, const PxTransform& body1Pose,
+	PxReal restitution, PxReal staticFriction, PxReal dynamicFriction,
+	PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction,
+	PxU8 materialFlags)
 {
 	p.body0Normal = body0Pose.rotateInv(worldNormal);
 	p.body1Normal = body1Pose.rotateInv(worldNormal);
@@ -128,6 +142,8 @@ static PX_FORCE_INLINE void initFrictionPatch(FrictionPatch& p, const PxVec3& wo
 	p.broken = 0;
 	p.staticFriction = staticFriction;
 	p.dynamicFriction = dynamicFriction;
+	p.anisotropicStaticFriction = anisotropicStaticFriction;
+	p.anisotropicDynamicFriction = anisotropicDynamicFriction;
 	p.restitution = restitution;
 	p.materialFlags = materialFlags;
 }
@@ -140,8 +156,6 @@ bool correlatePatches(CorrelationBuffer& fb,
 					  PxU32 startContactPatchIndex,
 					  PxU32 startFrictionPatchIndex)
 {
-	normalTolerance = 2.0f;
-
 	bool overflow = false;
 	PxU32 frictionPatchCount = fb.frictionPatchCount;
 
@@ -149,11 +163,18 @@ bool correlatePatches(CorrelationBuffer& fb,
 	{
 		CorrelationBuffer::ContactPatchData &c = fb.contactPatches[i];
 		const PxVec3 patchNormal = cb[c.start].normal;
+		const bool hasAnisotropicFriction =
+			(c.anisotropicStaticFriction != c.staticFriction) ||
+			(c.anisotropicDynamicFriction != c.dynamicFriction);
 
 		PxU32 j=startFrictionPatchIndex;
-		for(;j<frictionPatchCount && ((patchNormal.dot(fb.frictionPatchWorldNormal[j]) < normalTolerance) 
-			|| fb.frictionPatches[j].restitution != c.restitution|| fb.frictionPatches[j].staticFriction != c.staticFriction || 
-			fb.frictionPatches[j].dynamicFriction != c.dynamicFriction);j++)
+		for(;j<frictionPatchCount && (hasAnisotropicFriction
+			|| (patchNormal.dot(fb.frictionPatchWorldNormal[j]) < normalTolerance)
+			|| fb.frictionPatches[j].restitution != c.restitution
+			|| fb.frictionPatches[j].staticFriction != c.staticFriction
+			|| fb.frictionPatches[j].dynamicFriction != c.dynamicFriction
+			|| fb.frictionPatches[j].anisotropicStaticFriction != c.anisotropicStaticFriction
+			|| fb.frictionPatches[j].anisotropicDynamicFriction != c.anisotropicDynamicFriction);j++)
 			;
 
 		if(j==frictionPatchCount)
@@ -162,7 +183,10 @@ bool correlatePatches(CorrelationBuffer& fb,
 			if(overflow)
 				continue;
 
-			initFrictionPatch(fb.frictionPatches[frictionPatchCount], patchNormal, bodyFrame0, bodyFrame1, c.restitution, c.staticFriction, c.dynamicFriction, c.flags);
+			initFrictionPatch(fb.frictionPatches[frictionPatchCount], patchNormal, bodyFrame0, bodyFrame1,
+				c.restitution, c.staticFriction, c.dynamicFriction,
+				c.anisotropicStaticFriction, c.anisotropicDynamicFriction,
+				c.flags);
 			fb.frictionPatchWorldNormal[j] = patchNormal;
 			fb.frictionPatchContactCounts[frictionPatchCount] = c.count;
 			fb.patchBounds[frictionPatchCount] = c.patchBounds;

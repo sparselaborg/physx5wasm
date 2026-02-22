@@ -48,6 +48,8 @@ struct FrictionPatch
 	PxReal				restitution;
 	PxReal				staticFriction;
 	PxReal				dynamicFriction;
+	PxReal				anisotropicStaticFriction;
+	PxReal				anisotropicDynamicFriction;
 	PxVec3				body0Normal;
 	PxVec3				body1Normal;
 	PxVec3				body0Anchors[2];
@@ -69,6 +71,8 @@ struct FrictionPatch
 		restitution = other.restitution;
 		staticFriction = other.staticFriction;
 		dynamicFriction = other.dynamicFriction;
+		anisotropicStaticFriction = other.anisotropicStaticFriction;
+		anisotropicDynamicFriction = other.anisotropicDynamicFriction;
 	}
 
 	PX_FORCE_INLINE	void	prefetch()	const

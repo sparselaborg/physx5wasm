@@ -68,6 +68,11 @@ namespace physx
 		PxReal staticFriction;
 
 		/**
+		\brief The anisotropic static friction coefficient (primary anisotropic tangent axis).
+		*/
+		PxReal anisotropicStaticFriction;
+
+		/**
 		\brief Material flags for this contact (eDISABLE_FRICTION, eDISABLE_STRONG_FRICTION). \see PxMaterialFlag
 		*/
 		PxU8 materialFlags;
@@ -83,6 +88,11 @@ namespace physx
 		\brief The dynamic friction coefficient
 		*/
 		PxReal dynamicFriction;
+
+		/**
+		\brief The anisotropic dynamic friction coefficient (primary anisotropic tangent axis).
+		*/
+		PxReal anisotropicDynamicFriction;
 
 		/**
 		\brief The restitution coefficient

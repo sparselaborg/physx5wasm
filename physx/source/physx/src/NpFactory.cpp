@@ -613,6 +613,8 @@ PxMaterial* NpFactory::createMaterial(PxReal staticFriction, PxReal dynamicFrict
 	PxsMaterialData materialData;
 	materialData.staticFriction = staticFriction;
 	materialData.dynamicFriction = dynamicFriction;
+	materialData.anisotropicStaticFriction = staticFriction;
+	materialData.anisotropicDynamicFriction = dynamicFriction;
 	materialData.restitution = restitution;
 
 	NpMaterial* npMaterial;
