@@ -148,9 +148,7 @@ static void setupFinalizeSolverConstraints(
 
 		const PxU32 firstPatch = c.correlationListHeads[i];
 		const PxContactPoint* contactBase0 = buffer + c.contactPatches[firstPatch].start;
-		const bool hasAnisotropicFriction =
-			(contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) ||
-			(contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction);
+		const bool hasAnisotropicFriction = (contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) || (contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction);
 		Vec3V accumulatedPatchTargetVel = V3Zero();
 
 		SolverContactHeader* PX_RESTRICT header = reinterpret_cast<SolverContactHeader*>(ptr);
@@ -204,8 +202,10 @@ static void setupFinalizeSolverConstraints(
 					bounceThreshold, contact, *solverContact,
 					ccdMaxSeparation, solverOffsetSlop, damping, accelerationSpring);
 
-				if(hasAnisotropicFriction)
+				if (hasAnisotropicFriction)
+				{
 					accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
+				}
 			}
 
 			ptr = p;
@@ -258,7 +258,7 @@ static void setupFinalizeSolverConstraints(
 
 			const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
 			Vec3V t0 = relVelSubNorVel;
-			if(hasAnisotropicFriction)
+			if (hasAnisotropicFriction)
 			{
 				const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
 				const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));

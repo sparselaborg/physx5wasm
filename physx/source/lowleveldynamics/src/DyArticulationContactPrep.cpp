@@ -431,8 +431,10 @@ void setupFinalizeExtSolverContacts(
 				accumImpulse = FAdd(accumImpulse, setupExtSolverContact(b0, b1, d0, d1, angD0, angD1, frame0p, frame1p, normal, invDt, invDtp8, dt, restDistance, maxPenBias, restitution,
 					bounceThreshold, contact, *solverContact, ccdMaxSeparation, Z, vel0, vel1, cfm, solverOffsetSlop, norVel0, norVel1, damping, accelerationSpring));
 
-				if(hasAnisotropicFriction)
+				if (hasAnisotropicFriction)
+				{
 					accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
+				}
 			}
 
 			ptr = p;
@@ -471,7 +473,7 @@ void setupFinalizeExtSolverContacts(
 
 			const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
 			Vec3V t0 = relVelSubNorVel;
-			if(hasAnisotropicFriction)
+			if (hasAnisotropicFriction)
 			{
 				const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
 				const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));

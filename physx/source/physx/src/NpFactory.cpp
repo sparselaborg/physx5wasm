@@ -606,15 +606,22 @@ void NpFactory::onAggregateRelease(PxAggregate* a)
 
 PxMaterial* NpFactory::createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution)
 {
+	return createMaterial(staticFriction, dynamicFriction, restitution, staticFriction, dynamicFriction);
+}
+
+PxMaterial* NpFactory::createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution, PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction)
+{
 	PX_CHECK_AND_RETURN_NULL(dynamicFriction >= 0.0f, "createMaterial: dynamicFriction must be >= 0.");
 	PX_CHECK_AND_RETURN_NULL(staticFriction >= 0.0f, "createMaterial: staticFriction must be >= 0.");
+	PX_CHECK_AND_RETURN_NULL(anisotropicDynamicFriction >= 0.0f, "createMaterial: anisotropicDynamicFriction must be >= 0.");
+	PX_CHECK_AND_RETURN_NULL(anisotropicStaticFriction >= 0.0f, "createMaterial: anisotropicStaticFriction must be >= 0.");
 	PX_CHECK_AND_RETURN_NULL(restitution >= 0.0f || restitution <= 1.0f, "createMaterial: restitution must be between 0 and 1.");
 
 	PxsMaterialData materialData;
 	materialData.staticFriction = staticFriction;
 	materialData.dynamicFriction = dynamicFriction;
-	materialData.anisotropicStaticFriction = staticFriction;
-	materialData.anisotropicDynamicFriction = dynamicFriction;
+	materialData.anisotropicStaticFriction = anisotropicStaticFriction;
+	materialData.anisotropicDynamicFriction = anisotropicDynamicFriction;
 	materialData.restitution = restitution;
 
 	NpMaterial* npMaterial;
