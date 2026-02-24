@@ -293,10 +293,10 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
 				const Vec4V totalImpulse = V4NegMulSub(normalVel, f.velMultiplier, tmp1);
-				const BoolV clamped = V4IsGrtr(V4Abs(totalImpulse), maxFrictionImpulse);
-				broken = BOr(broken, clamped);
+				
+				broken = BOr(broken, V4IsGrtr(V4Abs(totalImpulse), maxFrictionImpulse));
 
-				const Vec4V newAppliedForce = V4Sel(clamped, V4Min(maxDynFrictionImpulse, V4Max(negMaxDynFrictionImpulse, totalImpulse)), totalImpulse);
+				const Vec4V newAppliedForce = V4Sel(broken, V4Min(maxDynFrictionImpulse, V4Max(negMaxDynFrictionImpulse, totalImpulse)), totalImpulse);
 
 				const Vec4V deltaF = V4Sub(newAppliedForce, appliedForce);
 				
@@ -610,10 +610,10 @@ static void solveContact4_StaticBlock(const PxSolverConstraintDesc* PX_RESTRICT 
 				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
 				const Vec4V totalImpulse = V4NegMulSub(normalVel, f.velMultiplier, tmp1);
-				const BoolV clamped = V4IsGrtr(V4Abs(totalImpulse), maxFrictionImpulse);
-				broken = BOr(broken, clamped);
 
-				const Vec4V newAppliedForce = V4Sel(clamped, V4Min(maxDynFrictionImpulse, V4Max(negMaxDynFrictionImpulse, totalImpulse)), totalImpulse);
+				broken = BOr(broken, V4IsGrtr(V4Abs(totalImpulse), maxFrictionImpulse));
+
+				const Vec4V newAppliedForce = V4Sel(broken, V4Min(maxDynFrictionImpulse, V4Max(negMaxDynFrictionImpulse, totalImpulse)), totalImpulse);
 
 				const Vec4V deltaF = V4Sub(newAppliedForce, appliedForce);
 
