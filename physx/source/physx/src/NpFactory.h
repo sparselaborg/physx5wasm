@@ -239,7 +239,6 @@ public:
 
 				// Materials
 				PxMaterial*								createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution);
-				PxMaterial*								createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution, PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction);
 				void									releaseMaterialToPool(NpMaterial& material);
 
 #if PX_SUPPORT_GPU_PHYSX

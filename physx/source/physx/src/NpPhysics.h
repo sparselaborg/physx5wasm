@@ -155,7 +155,6 @@ public:
 	virtual		PxU32						getShapes(PxShape** userBuffer, PxU32 bufferSize, PxU32 startIndex)	const	PX_OVERRIDE;
 
 	virtual		PxMaterial*					createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution)	PX_OVERRIDE;
-	virtual		PxMaterial*					createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution, PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction)	PX_OVERRIDE;
 	virtual		PxU32						getNbMaterials() const	PX_OVERRIDE;
 	virtual		PxU32						getMaterials(PxMaterial** userBuffer, PxU32 bufferSize, PxU32 startIndex=0) const	PX_OVERRIDE;
 
