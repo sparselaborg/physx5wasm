@@ -1174,7 +1174,7 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f0->rbXnI[1] = delAngVel1Y;
 						f0->rbXnI[2] = delAngVel1Z;
 
-						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
+						const Vec4V velMultiplier = V4Mul(anisotropicDynamicScale4, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
 
 						Vec4V error = V4MulAdd(t0Z, errorZ, V4MulAdd(t0Y, errorY, V4Mul(t0X, errorX)));
 
@@ -1269,7 +1269,7 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f1->rbXnI[1] = delAngVel1Y;
 						f1->rbXnI[2] = delAngVel1Z;
 
-						const Vec4V velMultiplier = V4Mul(anisotropicDynamicScale4, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
 
 						Vec4V error = V4MulAdd(t1Z, errorZ, V4MulAdd(t1Y, errorY, V4Mul(t1X, errorX)));
 

@@ -246,7 +246,7 @@ static void setupFinalizeSolverConstraints(
 			const FloatV orthoThreshold = FLoad(0.70710678f);
 			const FloatV p1 = FLoad(0.0001f);
 			const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
-			const FloatV anisotropicSecondaryScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
+			const FloatV anisotropicDynamicScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
 			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 			const FloatV normalX = V3GetX(normal);
 			const FloatV normalY = V3GetY(normal);
@@ -330,7 +330,7 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero);
+					const FloatV velMultiplier = FMul(anisotropicDynamicScale, FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero));
 
 					FloatV targetVel = V3Dot(tvel, t0);
 
@@ -360,7 +360,7 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FMul(anisotropicSecondaryScale, FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero));
+					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero);
 
 					FloatV targetVel = V3Dot(tvel, t1);
 
