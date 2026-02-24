@@ -347,8 +347,6 @@ struct PxsCCDPair
 	PxU16					mMaterialIndex1;		// The material index for shape 1
 	PxReal					mDynamicFriction;		// The dynamic friction coefficient
 	PxReal					mStaticFriction;		// The static friction coefficient
-	PxReal					mAnisotropicDynamicFriction;	// The anisotropic dynamic friction coefficient
-	PxReal					mAnisotropicStaticFriction;	// The anisotropic static friction coefficient
 	PxReal					mRestitution;			// The restitution coefficient
 	PxU32					mEstimatePass;			// The current estimation pass. Used after a sweep hit was found to determine if the pair needs re-estimating.
 	PxReal					mAppliedForce;			// The applied force for this pair. Only valid if the pair has been responded to.
