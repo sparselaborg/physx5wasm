@@ -55,8 +55,6 @@ static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData
 
 bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
 {
-	normalTolerance = 2.0f;
-
 	// PT: this rewritten version below doesn't have LHS
 
 	PxU32 contactPatchCount = fb.contactPatchCount;
@@ -140,8 +138,6 @@ bool correlatePatches(CorrelationBuffer& fb,
 					  PxU32 startContactPatchIndex,
 					  PxU32 startFrictionPatchIndex)
 {
-	normalTolerance = 2.0f;
-
 	bool overflow = false;
 	PxU32 frictionPatchCount = fb.frictionPatchCount;
 
