@@ -782,7 +782,6 @@ bool createFinalizeSolverContacts(PxSolverContactDesc& contactDesc,
 
 		contactDesc.contacts = buffer.contacts;
 		contactDesc.numContacts = numContacts;
-		contactDesc.disableStrongFriction = contactDesc.disableStrongFriction || hasTargetVelocity;
 		contactDesc.hasMaxImpulse = hasMaxImpulse;
 		contactDesc.invMassScales.linear0 *= invMassScale0;
 		contactDesc.invMassScales.linear1 *= invMassScale1;
