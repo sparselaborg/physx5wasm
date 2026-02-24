@@ -225,8 +225,6 @@ public:
 						patches[k].normal = points[startIndex].normal;
 						patches[k].dynamicFriction = points[startIndex].dynamicFriction;
 						patches[k].staticFriction = points[startIndex].staticFriction;
-						patches[k].anisotropicDynamicFriction = points[startIndex].anisotropicDynamicFriction;
-						patches[k].anisotropicStaticFriction = points[startIndex].anisotropicStaticFriction;
 						patches[k].restitution = points[startIndex].restitution;
 
 						for (PxU32 j = 1; j < patches[k].nbContacts; ++j)

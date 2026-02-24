@@ -74,10 +74,6 @@ public:
 	virtual		PxReal				getDynamicFriction() const	PX_OVERRIDE;
 	virtual		void				setStaticFriction(PxReal)	PX_OVERRIDE;
 	virtual		PxReal				getStaticFriction() const	PX_OVERRIDE;
-	virtual		void				setAnisotropicDynamicFriction(PxReal)	PX_OVERRIDE;
-	virtual		PxReal				getAnisotropicDynamicFriction() const	PX_OVERRIDE;
-	virtual		void				setAnisotropicStaticFriction(PxReal)	PX_OVERRIDE;
-	virtual		PxReal				getAnisotropicStaticFriction() const	PX_OVERRIDE;
 	virtual		void				setRestitution(PxReal)	PX_OVERRIDE;
 	virtual		PxReal				getRestitution() const	PX_OVERRIDE; 
 	virtual		void				setDamping(PxReal)	PX_OVERRIDE;

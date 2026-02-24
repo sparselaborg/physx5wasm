@@ -443,8 +443,6 @@ public:
 						PxContactPoint& point = buffer.contacts[size++];
 						point.dynamicFriction = iter.getDynamicFriction();
 						point.staticFriction = iter.getStaticFriction();
-						point.anisotropicDynamicFriction = iter.getAnisotropicDynamicFriction();
-						point.anisotropicStaticFriction = iter.getAnisotropicStaticFriction();
 						point.restitution = iter.getRestitution();
 						point.internalFaceIndex1 = iter.getFaceIndex1();
 						PX_ASSERT(iter.getMaterialFlags() <= PX_MAX_U8);

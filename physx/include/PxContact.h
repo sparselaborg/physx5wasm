@@ -94,16 +94,6 @@ struct PxContactPatch
 	PxReal	staticFriction;
 
 	/**
-	\brief Anisotropic static friction coefficient (primary anisotropic tangent axis)
-	*/
-	PxReal	anisotropicStaticFriction;
-
-	/**
-	\brief Anisotropic dynamic friction coefficient (primary anisotropic tangent axis)
-	*/
-	PxReal	anisotropicDynamicFriction;
-
-	/**
 	\brief Damping coefficient (for compliant contacts)
 	*/
 	PxReal	damping;
@@ -139,7 +129,7 @@ struct PxContactPatch
 	*/
 	PxU16	materialIndex1;
 
-	PxU16	pad[1];
+	PxU16	pad[5];
 }
 PX_ALIGN_SUFFIX(16);
 
@@ -214,14 +204,6 @@ struct PxModifiableContact : public PxExtendedContact
 	\brief dynamic friction coefficient
 	*/	
 	PxReal dynamicFriction;
-	/**
-	\brief anisotropic static friction coefficient
-	*/
-	PxReal anisotropicStaticFriction;
-	/**
-	\brief anisotropic dynamic friction coefficient
-	*/
-	PxReal anisotropicDynamicFriction;
 }
 PX_ALIGN_SUFFIX(16);
 
@@ -544,24 +526,6 @@ struct PxContactStreamIterator
 	PX_CUDA_CALLABLE PX_FORCE_INLINE PxReal getDynamicFriction() const
 	{
 		return getContactPatch().dynamicFriction;
-	}
-
-	/**
-	\brief Gets the contact's anisotropic static friction coefficient.
-	\return The contact's anisotropic static friction coefficient.
-	*/
-	PX_CUDA_CALLABLE PX_FORCE_INLINE PxReal getAnisotropicStaticFriction() const
-	{
-		return getContactPatch().anisotropicStaticFriction;
-	}
-
-	/**
-	\brief Gets the contact's anisotropic dynamic friction coefficient.
-	\return The contact's anisotropic dynamic friction coefficient.
-	*/
-	PX_CUDA_CALLABLE PX_FORCE_INLINE PxReal getAnisotropicDynamicFriction() const
-	{
-		return getContactPatch().anisotropicDynamicFriction;
 	}
 
 	/**

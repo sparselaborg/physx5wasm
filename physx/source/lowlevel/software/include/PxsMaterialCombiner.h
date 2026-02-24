@@ -69,7 +69,6 @@ namespace physx
 
 	PX_CUDA_CALLABLE PX_FORCE_INLINE void PxsCombineMaterials(const PxsMaterialData& mat0Data, const PxsMaterialData& mat1Data,
 		PxReal& combinedStaticFriction, PxReal& combinedDynamicFriction, 
-		PxReal& combinedAnisotropicStaticFriction, PxReal& combinedAnisotropicDynamicFriction,
 		PxReal& combinedRestitution, PxU32& combinedMaterialFlags, PxReal& combinedDamping)
 	{
 		const PxReal r0 = mat0Data.restitution;
@@ -125,7 +124,7 @@ namespace physx
 			}
 		}
 
-		// combine friction
+		// combine isotropic friction
 		{
 			const PxU32 combineFlags = (mat0Data.flags | mat1Data.flags); //& (PxMaterialFlag::eDISABLE_STRONG_FRICTION|PxMaterialFlag::eDISABLE_FRICTION);	//eventually set DisStrongFric flag, lower all others.
 
@@ -134,13 +133,9 @@ namespace physx
 				const PxI32 fictionCombineMode = PxMax(mat0Data.getFrictionCombineMode(), mat1Data.getFrictionCombineMode());
 				PxReal dynFriction = 0.0f;
 				PxReal staFriction = 0.0f;
-				PxReal anisDynFriction = 0.0f;
-				PxReal anisStaFriction = 0.0f;
 
 				dynFriction = PxsCombinePxReal(mat0Data.dynamicFriction, mat1Data.dynamicFriction, fictionCombineMode);
 				staFriction = PxsCombinePxReal(mat0Data.staticFriction, mat1Data.staticFriction, fictionCombineMode);
-				anisDynFriction = PxsCombinePxReal(mat0Data.anisotropicDynamicFriction, mat1Data.anisotropicDynamicFriction, fictionCombineMode);
-				anisStaFriction = PxsCombinePxReal(mat0Data.anisotropicStaticFriction, mat1Data.anisotropicStaticFriction, fictionCombineMode);
 
 				/*switch (fictionCombineMode)
 				{
@@ -170,19 +165,8 @@ namespace physx
 #else
 				const PxReal fStaFriction = physx::intrinsics::fsel(staFriction - fDynFriction, staFriction, fDynFriction);
 #endif
-
-				const PxReal fAnisDynFriction = PxMax(anisDynFriction, 0.0f);
-
-#if PX_CUDA_COMPILER
-				const PxReal fAnisStaFriction = (anisStaFriction - fAnisDynFriction) >= 0 ? anisStaFriction : fAnisDynFriction;
-#else
-				const PxReal fAnisStaFriction = physx::intrinsics::fsel(anisStaFriction - fAnisDynFriction, anisStaFriction, fAnisDynFriction);
-#endif
-
 				combinedDynamicFriction = fDynFriction;
 				combinedStaticFriction = fStaFriction;
-				combinedAnisotropicDynamicFriction = fAnisDynFriction;
-				combinedAnisotropicStaticFriction = fAnisStaFriction;
 				combinedMaterialFlags = combineFlags;
 			}
 			else
@@ -190,8 +174,6 @@ namespace physx
 				combinedMaterialFlags = combineFlags | PxMaterialFlag::eDISABLE_STRONG_FRICTION;
 				combinedDynamicFriction = 0.0f;
 				combinedStaticFriction = 0.0f;
-				combinedAnisotropicDynamicFriction = 0.0f;
-				combinedAnisotropicStaticFriction = 0.0f;
 			}
 
 		}

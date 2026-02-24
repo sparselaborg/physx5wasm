@@ -135,34 +135,6 @@ PxReal NpMaterial::getStaticFriction() const
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void NpMaterial::setAnisotropicDynamicFriction(PxReal x)
-{
-	PX_CHECK_AND_RETURN(PxIsFinite(x), "PxMaterial::setAnisotropicDynamicFriction: invalid float");
-	mMaterial.anisotropicDynamicFriction = x;
-	updateMaterial();
-}
-
-PxReal NpMaterial::getAnisotropicDynamicFriction() const
-{
-	return mMaterial.anisotropicDynamicFriction;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-void NpMaterial::setAnisotropicStaticFriction(PxReal x)
-{
-	PX_CHECK_AND_RETURN(PxIsFinite(x), "PxMaterial::setAnisotropicStaticFriction: invalid float");
-	mMaterial.anisotropicStaticFriction = x;
-	updateMaterial();
-}
-
-PxReal NpMaterial::getAnisotropicStaticFriction() const
-{
-	return mMaterial.anisotropicStaticFriction;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 void NpMaterial::setRestitution(PxReal x)
 {
 	PX_CHECK_AND_RETURN(PxIsFinite(x), "PxMaterial::setRestitution: invalid float");

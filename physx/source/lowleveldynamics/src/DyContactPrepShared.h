@@ -167,8 +167,6 @@ PX_FORCE_INLINE PxU32 extractContacts(PxContactBuffer& buffer, const PxsContactM
 					buffer.contacts[numContacts].maxImpulse = maxImpulse;
 					buffer.contacts[numContacts].staticFriction = iter.getStaticFriction();
 					buffer.contacts[numContacts].dynamicFriction = iter.getDynamicFriction();
-					buffer.contacts[numContacts].anisotropicStaticFriction = iter.getAnisotropicStaticFriction();
-					buffer.contacts[numContacts].anisotropicDynamicFriction = iter.getAnisotropicDynamicFriction();
 					buffer.contacts[numContacts].restitution = iter.getRestitution();
 					buffer.contacts[numContacts].damping = iter.getDamping();
 					const PxVec3& targetVel = iter.getTargetVel();
