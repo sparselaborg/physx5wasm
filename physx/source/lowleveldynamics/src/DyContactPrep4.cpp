@@ -1573,6 +1573,8 @@ SolverConstraintPrepState::Enum createFinalizeSolverContacts4(
 
 		blockDesc.numContacts = contactCount;
 		blockDesc.hasMaxImpulse = hasMaxImpulse;
+		blockDesc.disableStrongFriction = blockDesc.disableStrongFriction || hasTargetVelocity;
+
 		blockDesc.invMassScales.linear0 *= invMassScale0;
 		blockDesc.invMassScales.linear1 *= invMassScale1;
 		blockDesc.invMassScales.angular0 *= invInertiaScale0;
