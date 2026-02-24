@@ -613,8 +613,6 @@ PxMaterial* NpFactory::createMaterial(PxReal staticFriction, PxReal dynamicFrict
 	PxsMaterialData materialData;
 	materialData.staticFriction = staticFriction;
 	materialData.dynamicFriction = dynamicFriction;
-	materialData.anisotropicStaticFriction = staticFriction;
-	materialData.anisotropicDynamicFriction = dynamicFriction;
 	materialData.restitution = restitution;
 
 	NpMaterial* npMaterial;
@@ -622,7 +620,7 @@ PxMaterial* NpFactory::createMaterial(PxReal staticFriction, PxReal dynamicFrict
 		PxMutex::ScopedLock lock(mMaterialPoolLock);		
 		npMaterial = mMaterialPool.construct(materialData);
 	}
-	return npMaterial;	
+	return npMaterial;
 }
 
 void NpFactory::releaseMaterialToPool(NpMaterial& material)
