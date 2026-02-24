@@ -727,13 +727,7 @@ bool NpPhysics::sendMaterialTable(NpScene& scene)
 
 PxMaterial* NpPhysics::createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution)
 {
-	PxMaterial* m = NpFactory::getInstance().createMaterial(staticFriction, dynamicFriction, restitution, staticFriction, dynamicFriction);
-	return addMaterial(static_cast<NpMaterial*>(m));
-}
-
-PxMaterial* NpPhysics::createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution, PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction)
-{
-	PxMaterial* m = NpFactory::getInstance().createMaterial(staticFriction, dynamicFriction, restitution, anisotropicStaticFriction, anisotropicDynamicFriction);
+	PxMaterial* m = NpFactory::getInstance().createMaterial(staticFriction, dynamicFriction, restitution);
 	return addMaterial(static_cast<NpMaterial*>(m));
 }
 

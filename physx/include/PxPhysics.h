@@ -767,21 +767,6 @@ public:
 	virtual PxMaterial* createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution) = 0;
 
 	/**
-	\brief Creates a new rigid body material with explicit anisotropic friction coefficients.
-
-	\return The new rigid body material.
-
-	\param	[in] staticFriction				The coefficient of static friction
-	\param	[in] dynamicFriction			The coefficient of dynamic friction
-	\param	[in] restitution				The coefficient of restitution
-	\param	[in] anisotropicStaticFriction	The coefficient of anisotropic static friction
-	\param	[in] anisotropicDynamicFriction	The coefficient of anisotropic dynamic friction
-
-	\see PxMaterial
-	*/
-	virtual PxMaterial* createMaterial(PxReal staticFriction, PxReal dynamicFriction, PxReal restitution, PxReal anisotropicStaticFriction, PxReal anisotropicDynamicFriction) = 0;
-
-	/**
 	\brief Return the number of rigid body materials that currently exist.
 
 	\return Number of rigid body materials.

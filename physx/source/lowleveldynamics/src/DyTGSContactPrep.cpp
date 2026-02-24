@@ -577,7 +577,9 @@ namespace Dy
 
 			FloatV maxPenetration = FMax();
 			const BoolV accelSpring = BLoad(!!(contactBase0->materialFlags & PxMaterialFlag::eCOMPLIANT_ACCELERATION_SPRING));
-			const bool hasAnisotropicFriction = (contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) || (contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction);
+			const bool hasAnisotropicFriction =
+				(contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) ||
+				(contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction);
 			Vec3V accumulatedPatchTargetVel = V3Zero();
 
 			for (PxU32 patch = c.correlationListHeads[i];
@@ -604,10 +606,8 @@ namespace Dy
 						bounceThreshold, contact, *solverContact,
 						ccdMaxSeparation, isKinematic0, isKinematic1, offsetSlop, dt, damping, accelSpring));
 
-					if (hasAnisotropicFriction)
-					{
+					if(hasAnisotropicFriction)
 						accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
-					}
 				}
 
 				ptr = p;
@@ -657,7 +657,7 @@ namespace Dy
 
 				const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
 				Vec3V t0 = relVelSubNorVel;
-				if (hasAnisotropicFriction)
+				if(hasAnisotropicFriction)
 				{
 					const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
 					const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
@@ -1147,10 +1147,8 @@ namespace Dy
 						cfm, v0, v1, offsetSlop, norVel0, norVel1);
 					accumulatedImpulse = FAdd(accumulatedImpulse, deltaF);
 
-					if (hasAnisotropicFriction)
-					{
+					if(hasAnisotropicFriction)
 						accumulatedPatchTargetVel = V3Add(accumulatedPatchTargetVel, V3LoadA(contact.targetVel));
-					}
 
 					maxPenetration = FMin(FLoad(contact.separation), maxPenetration);
 				}
@@ -1187,7 +1185,7 @@ namespace Dy
 
 				const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
 				Vec3V t0 = relVelSubNorVel;
-				if (hasAnisotropicFriction)
+				if(hasAnisotropicFriction)
 				{
 					const Vec3V patchTargetVel = V3Scale(accumulatedPatchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
 					const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
