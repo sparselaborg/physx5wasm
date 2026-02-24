@@ -676,6 +676,12 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 				contactBase2->dynamicFriction > 0.f ? (contactBase2->anisotropicDynamicFriction / contactBase2->dynamicFriction) : 1.f,
 				contactBase3->dynamicFriction > 0.f ? (contactBase3->anisotropicDynamicFriction / contactBase3->dynamicFriction) : 1.f);
 
+			const Vec4V anisotropicStaticScale = V4LoadXYZW(
+				contactBase0->staticFriction > 0.f ? (contactBase0->anisotropicStaticFriction / contactBase0->staticFriction) : 1.f,
+				contactBase1->staticFriction > 0.f ? (contactBase1->anisotropicStaticFriction / contactBase1->staticFriction) : 1.f,
+				contactBase2->staticFriction > 0.f ? (contactBase2->anisotropicStaticFriction / contactBase2->staticFriction) : 1.f,
+				contactBase3->staticFriction > 0.f ? (contactBase3->anisotropicStaticFriction / contactBase3->staticFriction) : 1.f);
+
 			const BoolV hasAnisotropicFriction = V4IsGrtr(
 				V4LoadXYZW(
 					(contactBase0->anisotropicStaticFriction != contactBase0->staticFriction) || (contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction) ? 1.f : 0.f,
@@ -1025,6 +1031,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 						f0->raXnZ = delAngVel0Z;
 						f0->scaledBias = V4Mul(bias, velMultiplier);
 						f0->velMultiplier = velMultiplier;
+						f0->staticFrictionScale = maxImpulseScale;
 						f0->frictionScale = maxImpulseScale;
 					}
 
@@ -1120,6 +1127,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 						f1->raXnZ = delAngVel0Z;
 						f1->scaledBias = V4Mul(bias, velMultiplier);
 						f1->velMultiplier = velMultiplier;
+						f1->staticFrictionScale = V4Mul(maxImpulseScale, anisotropicStaticScale);
 						f1->frictionScale = V4Mul(maxImpulseScale, anisotropicDynamicScale);
 					}
 				}

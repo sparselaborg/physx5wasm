@@ -107,7 +107,7 @@ namespace physx
 			PxReal biasScale;
 			PxReal appliedForce;
 			PxReal frictionScale;
-			PxU32 pad[1];
+			PxReal staticFrictionScale;
 
 			PX_FORCE_INLINE void setAppliedForce(const aos::FloatV f) { aos::FStore(f, &appliedForce); }
 
