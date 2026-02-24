@@ -32,6 +32,7 @@
 #include "PxcNpContactPrepShared.h"
 #include "DyConstraintPrep.h"
 #include "DyAllocator.h"
+#include <iostream>
 
 using namespace physx;
 
@@ -229,6 +230,16 @@ static void setupFinalizeSolverConstraints(
 		const bool haveFriction = (disableStrongFriction == 0 && frictionPatch.anchorCount != 0);//PX_IR(n.staticFriction) > 0 || PX_IR(n.dynamicFriction) > 0;
 		header->numNormalConstr		= PxTo8(contactCount);
 		header->numFrictionConstr	= PxTo8(haveFriction ? frictionPatch.anchorCount*2 : 0);
+		if (hasAnisotropicFriction)
+		{
+			std::cout
+				<< "DyContactPrep(PGS): frictionPatchCount=" << c.frictionPatchCount
+				<< " patchIndex=" << i
+				<< " contactCount=" << contactCount
+				<< " anchorCount=" << frictionPatch.anchorCount
+				<< " numFrictionConstr=" << PxU32(header->numFrictionConstr)
+				<< std::endl;
+		}
 	
 		header->type				= type;
 
