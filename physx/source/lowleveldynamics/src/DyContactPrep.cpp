@@ -236,7 +236,6 @@ static void setupFinalizeSolverConstraints(
 
 			const FloatV orthoThreshold = FLoad(0.70710678f);
 			const FloatV p1 = FLoad(0.0001f);
-			const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
 			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 			const FloatV normalX = V3GetX(normal);
 			const FloatV normalY = V3GetY(normal);
@@ -246,21 +245,7 @@ static void setupFinalizeSolverConstraints(
 			const Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
 			const Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
 
-			Vec3V patchTargetVel = V3Zero();
-			for(PxU32 patch = c.correlationListHeads[i]; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-			{
-				const PxU32 patchContactCount = c.contactPatches[patch].count;
-				const PxContactPoint* patchContacts = buffer + c.contactPatches[patch].start;
-				for(PxU32 j = 0; j < patchContactCount; j++)
-				{
-					patchTargetVel = V3Add(patchTargetVel, V3LoadA(patchContacts[j].targetVel));
-				}
-			}
-			patchTargetVel = V3Scale(patchTargetVel, FLoad(1.0f / PxReal(PxMax(contactCount, 1u))));
-			const Vec3V targetVelSubNorVel = V3Sub(patchTargetVel, V3Scale(normal, V3Dot(normal, patchTargetVel)));
-			const Vec3V relVelSubNorVel = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
-			const BoolV useTargetVelForTangentBasis = FIsGrtr(V3LengthSq(targetVelSubNorVel), anisotropicVelocityThresholdSq);
-			Vec3V t0 = V3Sel(useTargetVelForTangentBasis, targetVelSubNorVel, relVelSubNorVel);
+			Vec3V t0 = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
 			t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
 			t0 = V3Normalize(t0);
 
@@ -311,13 +296,6 @@ static void setupFinalizeSolverConstraints(
 				index = index == 0xFFFF ? c.contactPatches[c.correlationListHeads[i]].start : index;
 
 				const Vec3V tvel = V3LoadA(buffer[index].targetVel);
-				const FloatV targetVelT0Abs = FAbs(V3Dot(tvel, t0));
-				const FloatV targetVelT1Abs = FAbs(V3Dot(tvel, t1));
-				const FloatV targetVelTangentSq = FAdd(FMul(targetVelT0Abs, targetVelT0Abs), FMul(targetVelT1Abs, targetVelT1Abs));
-				const BoolV hasAnisotropicDirection = FIsGrtr(targetVelTangentSq, anisotropicVelocityThresholdSq);
-				const BoolV useT0AsPrimaryAxis = FIsGrtrOrEq(targetVelT0Abs, targetVelT1Abs);
-				const FloatV anisotropicFrictionScaleT0 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, FOne(), zero), FOne());
-				const FloatV anisotropicFrictionScaleT1 = FSel(hasAnisotropicDirection, FSel(useT0AsPrimaryAxis, zero, FOne()), FOne());
 				
 				{
 					Vec3V raXn = V3Cross(ra, t0Cross);
@@ -333,7 +311,7 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FMul(anisotropicFrictionScaleT0, FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero));
+					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero);
 
 					FloatV targetVel = V3Dot(tvel, t0);
 
@@ -363,7 +341,7 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FMul(anisotropicFrictionScaleT1, FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero));
+					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero);
 
 					FloatV targetVel = V3Dot(tvel, t1);
 

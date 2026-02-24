@@ -700,78 +700,19 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 				const Vec4V t0FallbackX = V4Sel(cond, zero, V4Neg(normalY));
 				const Vec4V t0FallbackY = V4Sel(cond, V4Neg(normalZ), normalX);
 				const Vec4V t0FallbackZ = V4Sel(cond, normalY, zero);
-				const Vec4V anisotropicVelocityThresholdSq4 = V4Splat(FLoad(1e-6f));
 
 				//const Vec4V dotNormalVrel = V4MulAdd(normalZ, vrelZ, V4MulAdd(normalY, vrelY, V4Mul(normalX, vrelX)));
 				const Vec4V vrelSubNorVelX = V4NegMulSub(normalX, relNorVel, vrelX);
 				const Vec4V vrelSubNorVelY = V4NegMulSub(normalY, relNorVel, vrelY);
 				const Vec4V vrelSubNorVelZ = V4NegMulSub(normalZ, relNorVel, vrelZ);
 
-				PxVec3 basisTargetVel0(0.f), basisTargetVel1(0.f), basisTargetVel2(0.f), basisTargetVel3(0.f);
-				if(!hasFinished[0] && clampedContacts0)
-				{
-					for(PxU32 patch = firstPatch0; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-					{
-						const PxU32 patchContactCount = c.contactPatches[patch].count;
-						const PxContactPoint* patchContacts = descs[0].contacts + c.contactPatches[patch].start;
-						for(PxU32 j = 0; j < patchContactCount; j++)
-							basisTargetVel0 += patchContacts[j].targetVel;
-					}
-					basisTargetVel0 *= (1.0f / PxReal(clampedContacts0));
-				}
-				if(!hasFinished[1] && clampedContacts1)
-				{
-					for(PxU32 patch = firstPatch1; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-					{
-						const PxU32 patchContactCount = c.contactPatches[patch].count;
-						const PxContactPoint* patchContacts = descs[1].contacts + c.contactPatches[patch].start;
-						for(PxU32 j = 0; j < patchContactCount; j++)
-							basisTargetVel1 += patchContacts[j].targetVel;
-					}
-					basisTargetVel1 *= (1.0f / PxReal(clampedContacts1));
-				}
-				if(!hasFinished[2] && clampedContacts2)
-				{
-					for(PxU32 patch = firstPatch2; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-					{
-						const PxU32 patchContactCount = c.contactPatches[patch].count;
-						const PxContactPoint* patchContacts = descs[2].contacts + c.contactPatches[patch].start;
-						for(PxU32 j = 0; j < patchContactCount; j++)
-							basisTargetVel2 += patchContacts[j].targetVel;
-					}
-					basisTargetVel2 *= (1.0f / PxReal(clampedContacts2));
-				}
-				if(!hasFinished[3] && clampedContacts3)
-				{
-					for(PxU32 patch = firstPatch3; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
-					{
-						const PxU32 patchContactCount = c.contactPatches[patch].count;
-						const PxContactPoint* patchContacts = descs[3].contacts + c.contactPatches[patch].start;
-						for(PxU32 j = 0; j < patchContactCount; j++)
-							basisTargetVel3 += patchContacts[j].targetVel;
-					}
-					basisTargetVel3 *= (1.0f / PxReal(clampedContacts3));
-				}
-				const Vec4V basisTargetVelX = V4LoadXYZW(basisTargetVel0.x, basisTargetVel1.x, basisTargetVel2.x, basisTargetVel3.x);
-				const Vec4V basisTargetVelY = V4LoadXYZW(basisTargetVel0.y, basisTargetVel1.y, basisTargetVel2.y, basisTargetVel3.y);
-				const Vec4V basisTargetVelZ = V4LoadXYZW(basisTargetVel0.z, basisTargetVel1.z, basisTargetVel2.z, basisTargetVel3.z);
-				const Vec4V basisTargetNorVel = V4MulAdd(normalZ, basisTargetVelZ, V4MulAdd(normalY, basisTargetVelY, V4Mul(normalX, basisTargetVelX)));
-				const Vec4V targetVelSubNorVelX = V4NegMulSub(normalX, basisTargetNorVel, basisTargetVelX);
-				const Vec4V targetVelSubNorVelY = V4NegMulSub(normalY, basisTargetNorVel, basisTargetVelY);
-				const Vec4V targetVelSubNorVelZ = V4NegMulSub(normalZ, basisTargetNorVel, basisTargetVelZ);
-				const Vec4V lenSqTargetVelSubNorVel = V4MulAdd(targetVelSubNorVelX, targetVelSubNorVelX, V4MulAdd(targetVelSubNorVelY, targetVelSubNorVelY, V4Mul(targetVelSubNorVelZ, targetVelSubNorVelZ)));
-				const BoolV useTargetVelForTangentBasis = V4IsGrtr(lenSqTargetVelSubNorVel, anisotropicVelocityThresholdSq4);
-				const Vec4V t0BasisX = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelX, vrelSubNorVelX);
-				const Vec4V t0BasisY = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelY, vrelSubNorVelY);
-				const Vec4V t0BasisZ = V4Sel(useTargetVelForTangentBasis, targetVelSubNorVelZ, vrelSubNorVelZ);
+				const Vec4V lenSqvrelSubNorVelZ = V4MulAdd(vrelSubNorVelX, vrelSubNorVelX, V4MulAdd(vrelSubNorVelY, vrelSubNorVelY, V4Mul(vrelSubNorVelZ, vrelSubNorVelZ)));
 
-				const Vec4V lenSqT0Basis = V4MulAdd(t0BasisX, t0BasisX, V4MulAdd(t0BasisY, t0BasisY, V4Mul(t0BasisZ, t0BasisZ)));
+				const BoolV bcon2 = V4IsGrtr(lenSqvrelSubNorVelZ, p1);
 
-				const BoolV bcon2 = V4IsGrtr(lenSqT0Basis, p1);
-
-				Vec4V t0X = V4Sel(bcon2, t0BasisX, t0FallbackX);
-				Vec4V t0Y = V4Sel(bcon2, t0BasisY, t0FallbackY);
-				Vec4V t0Z = V4Sel(bcon2, t0BasisZ, t0FallbackZ);
+				Vec4V t0X = V4Sel(bcon2, vrelSubNorVelX, t0FallbackX);
+				Vec4V t0Y = V4Sel(bcon2, vrelSubNorVelY, t0FallbackY);
+				Vec4V t0Z = V4Sel(bcon2, vrelSubNorVelZ, t0FallbackZ);
 
 				//Now normalize this...
 				const Vec4V recipLen = V4Rsqrt(V4MulAdd(t0Z, t0Z, V4MulAdd(t0Y, t0Y, V4Mul(t0X, t0X))));
@@ -916,12 +857,6 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 
 					Vec4V targetVelX, targetVelY, targetVelZ;
 					PX_TRANSPOSE_44_34(targetVel0, targetVel1, targetVel2, targetVel3, targetVelX, targetVelY, targetVelZ);
-					const Vec4V targetVelT0 = V4MulAdd(t0Z, targetVelZ, V4MulAdd(t0Y, targetVelY, V4Mul(t0X, targetVelX)));
-					const Vec4V targetVelT1 = V4MulAdd(t1Z, targetVelZ, V4MulAdd(t1Y, targetVelY, V4Mul(t1X, targetVelX)));
-					const BoolV hasAnisotropicDirection = V4IsGrtr(V4MulAdd(targetVelT0, targetVelT0, V4Mul(targetVelT1, targetVelT1)), V4Splat(FLoad(1e-6f)));
-					const BoolV useT0AsPrimaryAxis = V4IsGrtrOrEq(V4Abs(targetVelT0), V4Abs(targetVelT1));
-					const Vec4V anisotropicFrictionScaleT0 = V4Sel(hasAnisotropicDirection, V4Sel(useT0AsPrimaryAxis, one, zero), one);
-					const Vec4V anisotropicFrictionScaleT1 = V4Sel(hasAnisotropicDirection, V4Sel(useT0AsPrimaryAxis, zero, one), one);
 
 					{
 						Vec4V raXnX = V4NegMulSub(raZ, t0Y, V4Mul(raY, t0Z));
@@ -1002,11 +937,11 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 							vrel = V4Sub(vrel, dotRbXnAngVel1);
 						}
 
-						const Vec4V velMultiplier = V4Mul(anisotropicFrictionScaleT0, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
 
 						Vec4V bias = V4Scale(V4MulAdd(t0Z, errorZ, V4MulAdd(t0Y, errorY, V4Mul(t0X, errorX))), invDt);
 
-						Vec4V targetVel = targetVelT0;
+						Vec4V targetVel = V4MulAdd(t0Z, targetVelZ,V4MulAdd(t0Y, targetVelY, V4Mul(t0X, targetVelX)));
 						targetVel = V4Sub(targetVel, vrel);
 						f0->targetVelocity = V4Neg(V4Mul(targetVel, velMultiplier));
 						bias = V4Sub(bias, targetVel);
@@ -1097,11 +1032,11 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 							vrel = V4Sub(vrel, dotRbXnAngVel1);
 						}
 
-						const Vec4V velMultiplier = V4Mul(anisotropicFrictionScaleT1, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
 
 						Vec4V bias = V4Scale(V4MulAdd(t1Z, errorZ, V4MulAdd(t1Y, errorY, V4Mul(t1X, errorX))), invDt);
 
-						Vec4V targetVel = targetVelT1;
+						Vec4V targetVel = V4MulAdd(t1Z, targetVelZ,V4MulAdd(t1Y, targetVelY, V4Mul(t1X, targetVelX)));
 						targetVel = V4Sub(targetVel, vrel);
 						f1->targetVelocity = V4Neg(V4Mul(targetVel, velMultiplier));
 						bias = V4Sub(bias, targetVel);
