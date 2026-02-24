@@ -32,7 +32,6 @@
 #include "PxcNpContactPrepShared.h"
 #include "DyContactPrepShared.h"
 #include "DyAllocator.h"
-#include <iostream>
 
 using namespace physx;
 using namespace aos;
@@ -704,45 +703,6 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 			header->numFrictionConstr1 = PxTo8(clampedAnchorCount1*2);
 			header->numFrictionConstr2 = PxTo8(clampedAnchorCount2*2);
 			header->numFrictionConstr3 = PxTo8(clampedAnchorCount3*2);
-
-			PX_ALIGN(16, PxU32 hasAnisotropicLane[4]);
-			BStoreA(hasAnisotropicFriction, hasAnisotropicLane);
-			if (hasAnisotropicLane[0])
-			{
-				std::cout
-					<< "DyContactPrep4(PGS): frictionPatchCount=" << c.frictionPatchCount
-					<< " patchIndex=" << frictionIndex0
-					<< " anchorCount=" << clampedAnchorCount0
-					<< " numFrictionConstr=" << PxU32(header->numFrictionConstr0)
-					<< std::endl;
-			}
-			if (hasAnisotropicLane[1])
-			{
-				std::cout
-					<< "DyContactPrep4(PGS): frictionPatchCount=" << c.frictionPatchCount
-					<< " patchIndex=" << frictionIndex1
-					<< " anchorCount=" << clampedAnchorCount1
-					<< " numFrictionConstr=" << PxU32(header->numFrictionConstr1)
-					<< std::endl;
-			}
-			if (hasAnisotropicLane[2])
-			{
-				std::cout
-					<< "DyContactPrep4(PGS): frictionPatchCount=" << c.frictionPatchCount
-					<< " patchIndex=" << frictionIndex2
-					<< " anchorCount=" << clampedAnchorCount2
-					<< " numFrictionConstr=" << PxU32(header->numFrictionConstr2)
-					<< std::endl;
-			}
-			if (hasAnisotropicLane[3])
-			{
-				std::cout
-					<< "DyContactPrep4(PGS): frictionPatchCount=" << c.frictionPatchCount
-					<< " patchIndex=" << frictionIndex3
-					<< " anchorCount=" << clampedAnchorCount3
-					<< " numFrictionConstr=" << PxU32(header->numFrictionConstr3)
-					<< std::endl;
-			}
 		
 			//KS - TODO - extend this if needed
 			header->type = PxTo8(isDynamic ? DY_SC_TYPE_BLOCK_RB_CONTACT : DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT);
