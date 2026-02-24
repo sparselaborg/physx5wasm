@@ -1024,8 +1024,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 						f0->raXnY = delAngVel0Y;
 						f0->raXnZ = delAngVel0Z;
 						f0->scaledBias = V4Mul(bias, velMultiplier);
-						f0->velMultiplier = velMultiplier;
-						f0->frictionScale = maxImpulseScale;
+						f0->velMultiplier = velMultiplier;								
 					}
 
 					{
@@ -1107,7 +1106,7 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 							vrel = V4Sub(vrel, dotRbXnAngVel1);
 						}
 
-						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
+						const Vec4V velMultiplier = V4Mul(anisotropicDynamicScale, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
 
 						Vec4V bias = V4Scale(V4MulAdd(t1Z, errorZ, V4MulAdd(t1Y, errorY, V4Mul(t1X, errorX))), invDt);
 
@@ -1120,7 +1119,6 @@ static void setupFinalizeSolverConstraints4(PxSolverContactDesc* PX_RESTRICT des
 						f1->raXnZ = delAngVel0Z;
 						f1->scaledBias = V4Mul(bias, velMultiplier);
 						f1->velMultiplier = velMultiplier;
-						f1->frictionScale = V4Mul(maxImpulseScale, anisotropicDynamicScale);
 					}
 				}
 

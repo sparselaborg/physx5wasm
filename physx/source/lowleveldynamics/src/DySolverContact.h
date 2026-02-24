@@ -155,16 +155,13 @@ struct SolverContactFriction
 	Vec4V raXnXYZ_velMultiplierW;		//32
 	Vec4V rbXnXYZ_biasW;				//48
 	PxReal targetVel;					//52
-	PxReal frictionScale;				//56
-	PxU32 mPad[2];						//64
+	PxU32 mPad[3];						//64
 
 	PX_FORCE_INLINE void setAppliedForce(const FloatV f)	{ normalXYZ_appliedForceW = V4SetW(normalXYZ_appliedForceW,f);	}
 	PX_FORCE_INLINE void setBias(const FloatV f)			{ rbXnXYZ_biasW = V4SetW(rbXnXYZ_biasW,f);						}
-	PX_FORCE_INLINE void setFrictionScale(const FloatV f)	{ FStore(f, &frictionScale); }
 
 	PX_FORCE_INLINE Vec3V getNormal() const { return Vec3V_From_Vec4V(normalXYZ_appliedForceW); }
 	PX_FORCE_INLINE FloatV getAppliedForce() const { return V4GetW(normalXYZ_appliedForceW); }
-	PX_FORCE_INLINE FloatV getFrictionScale() const { return FLoad(frictionScale); }
 }; 
 
 PX_COMPILE_TIME_ASSERT(sizeof(SolverContactFriction) == 64);

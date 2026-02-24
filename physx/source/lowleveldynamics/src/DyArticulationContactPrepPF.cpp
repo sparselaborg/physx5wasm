@@ -294,7 +294,6 @@ bool setupFinalizeExtSolverContactsCoulomb(
 						f0->rbXnXYZ_biasW = V4ClearW(V4Neg(Vec4V_From_Vec3V(resp1.angular)));
 						f0->normalXYZ_appliedForceW = V4ClearW(Vec4V_From_Vec3V(t0));
 						FStore(tv, &f0->targetVel);
-						f0->setFrictionScale(FOne());
 						f0->linDeltaVA = deltaV0.linear;
 						f0->angDeltaVA = deltaV0.angular;
 						f0->linDeltaVB = deltaV1.linear;

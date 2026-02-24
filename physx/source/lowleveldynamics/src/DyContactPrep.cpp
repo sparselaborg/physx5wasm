@@ -344,7 +344,6 @@ static void setupFinalizeSolverConstraints(
 					f0->raXnXYZ_velMultiplierW = V4SetW(raXnSqrtInertia, velMultiplier);
 					f0->rbXnXYZ_biasW = V4SetW(rbXnSqrtInertia, FMul(V3Dot(t0, error), invDt));
 					FStore(targetVel, &f0->targetVel);
-					f0->setFrictionScale(FOne());
 				}
 
 				{
@@ -361,7 +360,7 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero);
+					const FloatV velMultiplier = FMul(anisotropicSecondaryScale, FSel(FIsGrtr(resp, zero), FDiv(p8, resp), zero));
 
 					FloatV targetVel = V3Dot(tvel, t1);
 
@@ -375,7 +374,6 @@ static void setupFinalizeSolverConstraints(
 					f1->raXnXYZ_velMultiplierW = V4SetW(raXnSqrtInertia, velMultiplier);
 					f1->rbXnXYZ_biasW = V4SetW(rbXnSqrtInertia, FMul(V3Dot(t1, error), invDt));
 					FStore(targetVel, &f1->targetVel);
-					f1->setFrictionScale(anisotropicSecondaryScale);
 				}
 			}
 		}

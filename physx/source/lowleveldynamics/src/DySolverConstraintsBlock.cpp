@@ -236,8 +236,9 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 			const Vec4V staticFric = hdr->staticFriction;
 			const Vec4V dynamicFric = hdr->dynamicFriction;
 
-			const Vec4V maxFrictionImpulseBase = V4Mul(staticFric, accumulatedNormalImpulse);
-			const Vec4V maxDynFrictionImpulseBase = V4Mul(dynamicFric, accumulatedNormalImpulse);
+			const Vec4V maxFrictionImpulse = V4Mul(staticFric, accumulatedNormalImpulse);
+			const Vec4V maxDynFrictionImpulse = V4Mul(dynamicFric, accumulatedNormalImpulse);
+			const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 			//const Vec4V negMaxFrictionImpulse = V4Neg(maxFrictionImpulse);
 			BoolV broken = BFFFF();
 
@@ -288,9 +289,6 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 				const Vec4V normalVel = V4Sub(normalVel_tmp2, normalVel_tmp1 );
 
 				const Vec4V tmp1 = V4Sub(appliedForce, f.scaledBias); 
-				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.frictionScale);
-				const Vec4V maxDynFrictionImpulse = V4Mul(maxDynFrictionImpulseBase, f.frictionScale);
-				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
 				const Vec4V totalImpulse = V4NegMulSub(normalVel, f.velMultiplier, tmp1);
 				
@@ -562,8 +560,9 @@ static void solveContact4_StaticBlock(const PxSolverConstraintDesc* PX_RESTRICT 
 
 			const Vec4V dynamicFric = hdr->dynamicFriction;
 
-			const Vec4V maxFrictionImpulseBase = V4Mul(staticFric, accumulatedNormalImpulse);
-			const Vec4V maxDynFrictionImpulseBase = V4Mul(dynamicFric, accumulatedNormalImpulse);
+			const Vec4V maxFrictionImpulse = V4Mul(staticFric, accumulatedNormalImpulse);
+			const Vec4V maxDynFrictionImpulse = V4Mul(dynamicFric, accumulatedNormalImpulse);
+			const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
 			BoolV broken = BFFFF();
 
@@ -605,9 +604,6 @@ static void solveContact4_StaticBlock(const PxSolverConstraintDesc* PX_RESTRICT 
 
 				// appliedForce -bias * velMultiplier - a hoisted part of the total impulse computation
 				const Vec4V tmp1 = V4Sub(appliedForce, f.scaledBias); 
-				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.frictionScale);
-				const Vec4V maxDynFrictionImpulse = V4Mul(maxDynFrictionImpulseBase, f.frictionScale);
-				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
 				const Vec4V totalImpulse = V4NegMulSub(normalVel, f.velMultiplier, tmp1);
 

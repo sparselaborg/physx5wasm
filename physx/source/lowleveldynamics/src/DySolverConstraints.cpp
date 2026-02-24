@@ -269,8 +269,9 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 		{
 			const FloatV staticFrictionCof = hdr->getStaticFriction();
 			const FloatV dynamicFrictionCof = hdr->getDynamicFriction();
-			const FloatV maxFrictionImpulseBase = FMul(staticFrictionCof, accumulatedNormalImpulse);
-			const FloatV maxDynFrictionImpulseBase = FMul(dynamicFrictionCof, accumulatedNormalImpulse);
+			const FloatV maxFrictionImpulse = FMul(staticFrictionCof, accumulatedNormalImpulse);
+			const FloatV maxDynFrictionImpulse = FMul(dynamicFrictionCof, accumulatedNormalImpulse);
+			const FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
 
 			BoolV broken = BFFFF();
 
@@ -293,10 +294,6 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV frictionScale = f.getFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
-				const FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
 				
 				const FloatV targetVel = FLoad(f.targetVel);
 
@@ -417,8 +414,8 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 
 		if(cache.doFriction && numFrictionConstr)
 		{
-			const FloatV maxFrictionImpulseBase = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
-			const FloatV maxDynFrictionImpulseBase = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
+			const FloatV maxFrictionImpulse = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
+			const FloatV maxDynFrictionImpulse = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
 
 			BoolV broken = BFFFF();
 			if(cache.writeBackIteration)
@@ -439,9 +436,6 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV frictionScale = f.getFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
 
 				const FloatV targetVel = FLoad(f.targetVel);
 	
@@ -1101,8 +1095,8 @@ void solveExtContact(const PxSolverConstraintDesc& desc, Vec3V& linVel0, Vec3V& 
 		if (doFriction && numFrictionConstr)
 		{
 			PxPrefetchLine(frictions);
-			const FloatV maxFrictionImpulseBase = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
-			const FloatV maxDynFrictionImpulseBase = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
+			const FloatV maxFrictionImpulse = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
+			const FloatV maxDynFrictionImpulse = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
 
 			BoolV broken = BFFFF();
 
@@ -1124,9 +1118,6 @@ void solveExtContact(const PxSolverConstraintDesc& desc, Vec3V& linVel0, Vec3V& 
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV frictionScale = f.getFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
 
 				const FloatV targetVel = FLoad(f.targetVel);
 
