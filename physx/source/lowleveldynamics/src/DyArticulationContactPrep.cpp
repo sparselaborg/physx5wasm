@@ -541,6 +541,7 @@ void setupFinalizeExtSolverContacts(
 					f0->linDeltaVB = deltaV1.linear;
 					f0->angDeltaVB = deltaV1.angular;
 					FStore(targetVel, &f0->targetVel);
+					f0->setFrictionScale(FOne());
 				}
 
 				{
@@ -559,7 +560,7 @@ void setupFinalizeExtSolverContacts(
 
 					//const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FMul(p8, FRecip(resp)), zero);
 
-					const FloatV velMultiplier = FMul(anisotropicSecondaryScale, FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero));
+					const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero);
 
 					FloatV targetVel = V3Dot(tvel, t1);
 
@@ -576,6 +577,7 @@ void setupFinalizeExtSolverContacts(
 					f1->linDeltaVB = deltaV1.linear;
 					f1->angDeltaVB = deltaV1.angular;
 					FStore(targetVel, &f1->targetVel);
+					f1->setFrictionScale(anisotropicSecondaryScale);
 				}
 			}
 		}
