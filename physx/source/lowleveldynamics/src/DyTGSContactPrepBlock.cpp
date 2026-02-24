@@ -150,7 +150,6 @@ struct SolverContactFrictionStepBlock
 	Vec4V targetVel;
 	Vec4V biasCoefficient;
 	Vec4V frictionScale;
-	Vec4V staticFrictionScale;
 };
 
 struct SolverConstraint1DHeaderStep4
@@ -830,7 +829,6 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 
 			PX_ALIGN(16, PxReal staticFriction[4]);
 			PX_ALIGN(16, PxReal dynamicFriction[4]);
-			PX_ALIGN(16, PxReal anisotropicStaticScale[4]);
 			PX_ALIGN(16, PxReal anisotropicDynamicScale[4]);
 			PX_ALIGN(16, PxReal hasAnisotropicFrictionScalar[4]);
 
@@ -843,22 +841,18 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 
 				staticFriction[0] = contactBase0->staticFriction * coeff0;
 				dynamicFriction[0] = contactBase0->dynamicFriction * coeff0;
-				anisotropicStaticScale[0] = contactBase0->staticFriction > 0.f ? (contactBase0->anisotropicStaticFriction / contactBase0->staticFriction) : 1.f;
 				anisotropicDynamicScale[0] = contactBase0->dynamicFriction > 0.f ? (contactBase0->anisotropicDynamicFriction / contactBase0->dynamicFriction) : 1.f;
 				hasAnisotropicFrictionScalar[0] = (contactBase0->anisotropicStaticFriction != contactBase0->staticFriction || contactBase0->anisotropicDynamicFriction != contactBase0->dynamicFriction) ? 1.f : 0.f;
 				staticFriction[1] = contactBase1->staticFriction * coeff1;
 				dynamicFriction[1] = contactBase1->dynamicFriction * coeff1;
-				anisotropicStaticScale[1] = contactBase1->staticFriction > 0.f ? (contactBase1->anisotropicStaticFriction / contactBase1->staticFriction) : 1.f;
 				anisotropicDynamicScale[1] = contactBase1->dynamicFriction > 0.f ? (contactBase1->anisotropicDynamicFriction / contactBase1->dynamicFriction) : 1.f;
 				hasAnisotropicFrictionScalar[1] = (contactBase1->anisotropicStaticFriction != contactBase1->staticFriction || contactBase1->anisotropicDynamicFriction != contactBase1->dynamicFriction) ? 1.f : 0.f;
 				staticFriction[2] = contactBase2->staticFriction * coeff2;
 				dynamicFriction[2] = contactBase2->dynamicFriction * coeff2;
-				anisotropicStaticScale[2] = contactBase2->staticFriction > 0.f ? (contactBase2->anisotropicStaticFriction / contactBase2->staticFriction) : 1.f;
 				anisotropicDynamicScale[2] = contactBase2->dynamicFriction > 0.f ? (contactBase2->anisotropicDynamicFriction / contactBase2->dynamicFriction) : 1.f;
 				hasAnisotropicFrictionScalar[2] = (contactBase2->anisotropicStaticFriction != contactBase2->staticFriction || contactBase2->anisotropicDynamicFriction != contactBase2->dynamicFriction) ? 1.f : 0.f;
 				staticFriction[3] = contactBase3->staticFriction * coeff3;
 				dynamicFriction[3] = contactBase3->dynamicFriction * coeff3;
-				anisotropicStaticScale[3] = contactBase3->staticFriction > 0.f ? (contactBase3->anisotropicStaticFriction / contactBase3->staticFriction) : 1.f;
 				anisotropicDynamicScale[3] = contactBase3->dynamicFriction > 0.f ? (contactBase3->anisotropicDynamicFriction / contactBase3->dynamicFriction) : 1.f;
 				hasAnisotropicFrictionScalar[3] = (contactBase3->anisotropicStaticFriction != contactBase3->staticFriction || contactBase3->anisotropicDynamicFriction != contactBase3->dynamicFriction) ? 1.f : 0.f;
 			}
@@ -876,7 +870,6 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 
 			if (maxAnchorCount)
 			{
-				const Vec4V anisotropicStaticScale4 = V4LoadA(anisotropicStaticScale);
 				const Vec4V anisotropicDynamicScale4 = V4LoadA(anisotropicDynamicScale);
 				const BoolV hasAnisotropicFriction = V4IsGrtr(V4LoadA(hasAnisotropicFrictionScalar), zero);
 				const BoolV cond = V4IsGrtr(orthoThreshold, V4Abs(normalX));
@@ -1199,7 +1192,6 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f0->biasCoefficient = V4Splat(frictionBiasScale);
 						f0->targetVel = targetVel;
 						f0->frictionScale = maxImpulseScale;
-						f0->staticFrictionScale = maxImpulseScale;
 					}
 
 					{
@@ -1296,7 +1288,6 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f1->targetVel = targetVel;
 						f1->biasCoefficient = V4Splat(frictionBiasScale);
 						f1->frictionScale = V4Mul(maxImpulseScale, anisotropicDynamicScale4);
-						f1->staticFrictionScale = V4Mul(maxImpulseScale, anisotropicStaticScale4);
 					}
 				}
 
@@ -2727,28 +2718,20 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 
 				const Vec4V frictionScale0 = f0.frictionScale;
 				const Vec4V frictionScale1 = f1.frictionScale;
-				const Vec4V staticFrictionScale0 = f0.staticFrictionScale;
-				const Vec4V staticFrictionScale1 = f1.staticFrictionScale;
 				const Vec4V frictionScaleEpsilon = V4Load(1e-6f);
-				const Vec4V invStaticFrictionScale0 = V4Recip(V4Max(staticFrictionScale0, frictionScaleEpsilon));
-				const Vec4V invStaticFrictionScale1 = V4Recip(V4Max(staticFrictionScale1, frictionScaleEpsilon));
-				const Vec4V invDynamicFrictionScale0 = V4Recip(V4Max(frictionScale0, frictionScaleEpsilon));
-				const Vec4V invDynamicFrictionScale1 = V4Recip(V4Max(frictionScale1, frictionScaleEpsilon));
+				const Vec4V invFrictionScale0 = V4Recip(V4Max(frictionScale0, frictionScaleEpsilon));
+				const Vec4V invFrictionScale1 = V4Recip(V4Max(frictionScale1, frictionScaleEpsilon));
 
-				const Vec4V scaledTotalImpulseStatic0 = V4Mul(totalImpulse0, invStaticFrictionScale0);
-				const Vec4V scaledTotalImpulseStatic1 = V4Mul(totalImpulse1, invStaticFrictionScale1);
-				const Vec4V scaledTotalImpulseStatic = V4Sqrt(V4MulAdd(scaledTotalImpulseStatic0, scaledTotalImpulseStatic0, V4Mul(scaledTotalImpulseStatic1, scaledTotalImpulseStatic1)));
+				const Vec4V scaledTotalImpulse0 = V4Mul(totalImpulse0, invFrictionScale0);
+				const Vec4V scaledTotalImpulse1 = V4Mul(totalImpulse1, invFrictionScale1);
+				const Vec4V scaledTotalImpulse = V4Sqrt(V4MulAdd(scaledTotalImpulse0, scaledTotalImpulse0, V4Mul(scaledTotalImpulse1, scaledTotalImpulse1)));
 
-				const Vec4V scaledTotalImpulseDynamic0 = V4Mul(totalImpulse0, invDynamicFrictionScale0);
-				const Vec4V scaledTotalImpulseDynamic1 = V4Mul(totalImpulse1, invDynamicFrictionScale1);
-				const Vec4V scaledTotalImpulseDynamic = V4Sqrt(V4MulAdd(scaledTotalImpulseDynamic0, scaledTotalImpulseDynamic0, V4Mul(scaledTotalImpulseDynamic1, scaledTotalImpulseDynamic1)));
-
-				const BoolV clamped = V4IsGrtr(scaledTotalImpulseStatic, maxFrictionImpulse);
+				const BoolV clamped = V4IsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
 				broken = BOr(broken, clamped);
 
-				const Vec4V scaledTotalClamped = V4Sel(clamped, V4Min(scaledTotalImpulseDynamic, maxDynFrictionImpulse), scaledTotalImpulseDynamic);
-				const Vec4V ratio = V4Sel(V4IsGrtr(scaledTotalImpulseDynamic, vZero), V4Div(scaledTotalClamped, scaledTotalImpulseDynamic), vZero);
+				const Vec4V scaledTotalClamped = V4Sel(broken, V4Min(scaledTotalImpulse, maxDynFrictionImpulse), scaledTotalImpulse);
+				const Vec4V ratio = V4Sel(V4IsGrtr(scaledTotalImpulse, vZero), V4Div(scaledTotalClamped, scaledTotalImpulse), vZero);
 
 				const Vec4V newAppliedForce0 = V4Mul(totalImpulse0, ratio);
 				const Vec4V newAppliedForce1 = V4Mul(totalImpulse1, ratio);

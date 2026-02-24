@@ -330,7 +330,7 @@ static bool setupFinalizeSolverConstraintsCoulomb(Sc::ShapeInteraction* shapeInt
 						//f0->rbXnXYZ_targetVelocityW = V4SetW(Vec4V_From_Vec3V(delAngVel1), FSub(V3Dot(targetVel, t0), vrel));
 						f0->rbXnXYZ_biasW = Vec4V_From_Vec3V(delAngVel1);
 						FStore(FSub(V3Dot(targetVel, t0), vrel), &f0->targetVel);
-						f0->setFrictionScales(FOne(), FOne());
+						f0->setFrictionScale(FOne());
 					}
 				}
 

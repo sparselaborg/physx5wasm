@@ -461,8 +461,7 @@ void setupFinalizeExtSolverContacts(
 			const FloatV orthoThreshold = FLoad(0.70710678f);
 			const FloatV p1 = FLoad(0.0001f);
 			const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
-			const FloatV anisotropicStaticScale = FLoad(staticFriction > 0.0f ? (anisotropicStaticFriction / staticFriction) : 1.0f);
-			const FloatV anisotropicDynamicScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
+			const FloatV anisotropicSecondaryScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
 			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 			const FloatV normalX = V3GetX(normal);
 			const FloatV normalY = V3GetY(normal);
@@ -542,7 +541,7 @@ void setupFinalizeExtSolverContacts(
 					f0->linDeltaVB = deltaV1.linear;
 					f0->angDeltaVB = deltaV1.angular;
 					FStore(targetVel, &f0->targetVel);
-					f0->setFrictionScales(FOne(), FOne());
+					f0->setFrictionScale(FOne());
 				}
 
 				{
@@ -578,7 +577,7 @@ void setupFinalizeExtSolverContacts(
 					f1->linDeltaVB = deltaV1.linear;
 					f1->angDeltaVB = deltaV1.angular;
 					FStore(targetVel, &f1->targetVel);
-					f1->setFrictionScales(anisotropicStaticScale, anisotropicDynamicScale);
+					f1->setFrictionScale(anisotropicSecondaryScale);
 				}
 			}
 		}

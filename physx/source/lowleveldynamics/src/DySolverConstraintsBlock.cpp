@@ -288,7 +288,7 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 				const Vec4V normalVel = V4Sub(normalVel_tmp2, normalVel_tmp1 );
 
 				const Vec4V tmp1 = V4Sub(appliedForce, f.scaledBias); 
-				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.staticFrictionScale);
+				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.frictionScale);
 				const Vec4V maxDynFrictionImpulse = V4Mul(maxDynFrictionImpulseBase, f.frictionScale);
 				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 
@@ -605,7 +605,7 @@ static void solveContact4_StaticBlock(const PxSolverConstraintDesc* PX_RESTRICT 
 
 				// appliedForce -bias * velMultiplier - a hoisted part of the total impulse computation
 				const Vec4V tmp1 = V4Sub(appliedForce, f.scaledBias); 
-				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.staticFrictionScale);
+				const Vec4V maxFrictionImpulse = V4Mul(maxFrictionImpulseBase, f.frictionScale);
 				const Vec4V maxDynFrictionImpulse = V4Mul(maxDynFrictionImpulseBase, f.frictionScale);
 				const Vec4V negMaxDynFrictionImpulse = V4Neg(maxDynFrictionImpulse);
 

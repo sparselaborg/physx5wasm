@@ -148,10 +148,9 @@ struct SolverContactFrictionBase4
 	Vec4V scaledBias;
 	Vec4V velMultiplier;
 	Vec4V targetVelocity;
-	Vec4V staticFrictionScale;
 	Vec4V frictionScale;
 };
-PX_COMPILE_TIME_ASSERT(sizeof(SolverContactFrictionBase4) == 128);
+PX_COMPILE_TIME_ASSERT(sizeof(SolverContactFrictionBase4) == 112);
 
 /**
 \brief Contains the additional data required to represent 4 friction constraints between 2 dynamic bodies
@@ -163,7 +162,7 @@ struct SolverContactFrictionDynamic4 : public SolverContactFrictionBase4
 	Vec4V rbXnY;
 	Vec4V rbXnZ;
 }; 
-PX_COMPILE_TIME_ASSERT(sizeof(SolverContactFrictionDynamic4) == 176);
+PX_COMPILE_TIME_ASSERT(sizeof(SolverContactFrictionDynamic4) == 160);
 
 }
 

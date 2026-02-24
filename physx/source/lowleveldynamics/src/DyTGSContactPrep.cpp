@@ -645,7 +645,6 @@ namespace Dy
 				const FloatV orthoThreshold = FLoad(0.70710678f);
 				const FloatV p1 = FLoad(0.0001f);
 				const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
-				const PxReal anisotropicStaticRatio = staticFriction > 0.0f ? (anisotropicStaticFriction / staticFriction) : 1.0f;
 				const PxReal anisotropicDynamicRatio = dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f;
 				// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 				const FloatV normalX = V3GetX(normal);
@@ -697,10 +696,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
-				const PxReal staticFrictionScaleT0 = frictionScale;
-				const PxReal staticFrictionScaleT1 = frictionScale * anisotropicStaticRatio;
-				const PxReal dynamicFrictionScaleT0 = frictionScale;
-				const PxReal dynamicFrictionScaleT1 = frictionScale * anisotropicDynamicRatio;
+				const PxReal frictionScaleT0 = frictionScale;
+				const PxReal frictionScaleT1 = frictionScale * anisotropicDynamicRatio;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{
@@ -757,8 +754,7 @@ namespace Dy
 						f0->raXnI_targetVelW = V4SetW(raXnInertia, targetVel);
 						f0->rbXnI_velMultiplierW = V4SetW(rbXnInertia, velMultiplier);
 						f0->appliedForce = 0.f;
-						f0->frictionScale = dynamicFrictionScaleT0;
-						f0->staticFrictionScale = staticFrictionScaleT0;
+						f0->frictionScale = frictionScaleT0;
 						f0->biasScale = frictionBiasScale;
 					}
 
@@ -795,8 +791,7 @@ namespace Dy
 						f1->raXnI_targetVelW = V4SetW(raXnInertia, targetVel);
 						f1->rbXnI_velMultiplierW = V4SetW(rbXnInertia, velMultiplier);
 						f1->appliedForce = 0.f;
-						f1->frictionScale = dynamicFrictionScaleT1;
-						f1->staticFrictionScale = staticFrictionScaleT1;
+						f1->frictionScale = frictionScaleT1;
 						f1->biasScale = frictionBiasScale;
 					}
 				}
@@ -833,7 +828,6 @@ namespace Dy
 					f->biasScale = 0.f;
 					f->appliedForce = 0.f;
 					FStore(torsionalFriction, &f->frictionScale);
-					FStore(torsionalFriction, &f->staticFrictionScale);
 				}
 			}
 
@@ -1084,7 +1078,6 @@ namespace Dy
 			const PxReal anisotropicStaticFriction = contactBase0->anisotropicStaticFriction;
 			const PxReal anisotropicDynamicFriction = contactBase0->anisotropicDynamicFriction;
 			const bool hasAnisotropicFriction = (anisotropicStaticFriction != staticFriction) || (anisotropicDynamicFriction != dynamicFriction);
-			const PxReal anisotropicStaticRatio = staticFriction > 0.0f ? (anisotropicStaticFriction / staticFriction) : 1.0f;
 			const PxReal anisotropicDynamicRatio = dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f;
 			Vec3V accumulatedPatchTargetVel = V3Zero();
 	
@@ -1220,10 +1213,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
-				const PxReal staticFrictionScaleT0 = frictionScale;
-				const PxReal staticFrictionScaleT1 = frictionScale * anisotropicStaticRatio;
-				const PxReal dynamicFrictionScaleT0 = frictionScale;
-				const PxReal dynamicFrictionScaleT1 = frictionScale * anisotropicDynamicRatio;
+				const PxReal frictionScaleT0 = frictionScale;
+				const PxReal frictionScaleT1 = frictionScale * anisotropicDynamicRatio;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{
@@ -1269,8 +1260,7 @@ namespace Dy
 						f0->linDeltaVB = deltaV1.linear;
 						f0->angDeltaVA = deltaV0.angular;
 						f0->angDeltaVB = deltaV1.angular;
-						f0->frictionScale = dynamicFrictionScaleT0;
-						f0->staticFrictionScale = staticFrictionScaleT0;
+						f0->frictionScale = frictionScaleT0;
 					}
 
 					{
@@ -1305,8 +1295,7 @@ namespace Dy
 						f1->linDeltaVB = deltaV1.linear;
 						f1->angDeltaVA = deltaV0.angular;
 						f1->angDeltaVB = deltaV1.angular;
-						f1->frictionScale = dynamicFrictionScaleT1;
-						f1->staticFrictionScale = staticFrictionScaleT1;
+						f1->frictionScale = frictionScaleT1;
 					}
 				}
 
@@ -1337,7 +1326,6 @@ namespace Dy
 					f->biasScale = 0.f;
 					f->appliedForce = 0.f;
 					FStore(torsionalFriction, &f->frictionScale);
-					FStore(torsionalFriction, &f->staticFrictionScale);
 					f->linDeltaVA = V3LoadA(deltaV0.linear);
 					f->linDeltaVB = V3LoadA(deltaV1.linear);
 					f->angDeltaVA = V3LoadA(deltaV0.angular);
@@ -1723,13 +1711,9 @@ namespace Dy
 
 					const FloatV frictionScale0 = FLoad(f0.frictionScale);
 					const FloatV frictionScale1 = FLoad(f1.frictionScale);
-					const FloatV staticFrictionScale0 = FLoad(f0.staticFrictionScale);
-					const FloatV staticFrictionScale1 = FLoad(f1.staticFrictionScale);
 					const FloatV frictionScaleEpsilon = FLoad(1e-6f);
-					const FloatV invStaticFrictionScale0 = FRecip(FMax(staticFrictionScale0, frictionScaleEpsilon));
-					const FloatV invStaticFrictionScale1 = FRecip(FMax(staticFrictionScale1, frictionScaleEpsilon));
-					const FloatV invDynamicFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
-					const FloatV invDynamicFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
+					const FloatV invFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
+					const FloatV invFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
 
 					const Vec4V normalXYZ_ErrorW0 = f0.normalXYZ_ErrorW;
 					const Vec4V raXnI_targetVelW0 = f0.raXnI_targetVelW;
@@ -1806,19 +1790,15 @@ namespace Dy
 					// On XBox this clamping code uses the vector simple pipe rather than vector float,
 					// which eliminates a lot of stall cycles
 
-					const FloatV scaledTotalImpulseStatic0 = FMul(totalImpulse0, invStaticFrictionScale0);
-					const FloatV scaledTotalImpulseStatic1 = FMul(totalImpulse1, invStaticFrictionScale1);
-					const FloatV scaledTotalImpulseStatic = FSqrt(FAdd(FMul(scaledTotalImpulseStatic0, scaledTotalImpulseStatic0), FMul(scaledTotalImpulseStatic1, scaledTotalImpulseStatic1)));
+					const FloatV scaledTotalImpulse0 = FMul(totalImpulse0, invFrictionScale0);
+					const FloatV scaledTotalImpulse1 = FMul(totalImpulse1, invFrictionScale1);
+					const FloatV scaledTotalImpulse = FSqrt(FAdd(FMul(scaledTotalImpulse0, scaledTotalImpulse0), FMul(scaledTotalImpulse1, scaledTotalImpulse1)));
 
-					const FloatV scaledTotalImpulseDynamic0 = FMul(totalImpulse0, invDynamicFrictionScale0);
-					const FloatV scaledTotalImpulseDynamic1 = FMul(totalImpulse1, invDynamicFrictionScale1);
-					const FloatV scaledTotalImpulseDynamic = FSqrt(FAdd(FMul(scaledTotalImpulseDynamic0, scaledTotalImpulseDynamic0), FMul(scaledTotalImpulseDynamic1, scaledTotalImpulseDynamic1)));
+					const BoolV clamp = FIsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
-					const BoolV clamp = FIsGrtr(scaledTotalImpulseStatic, maxFrictionImpulse);
+					const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulse), scaledTotalImpulse);
 
-					const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulseDynamic), scaledTotalImpulseDynamic);
-
-					const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulseDynamic, zero), FDiv(scaledTotalClamped, scaledTotalImpulseDynamic), zero);
+					const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulse, zero), FDiv(scaledTotalClamped, scaledTotalImpulse), zero);
 
 					const FloatV newAppliedForce0 = FMul(totalImpulse0, ratio);
 					const FloatV newAppliedForce1 = FMul(totalImpulse1, ratio);
@@ -1847,8 +1827,7 @@ namespace Dy
 				{
 					SolverContactFrictionStep& f = frictions[i];
 
-					const FloatV dynamicFrictionScale = FLoad(f.frictionScale);
-					const FloatV staticFrictionScale = FLoad(f.staticFrictionScale);
+					const FloatV frictionScale = FLoad(f.frictionScale);
 
 					const Vec4V raXnI_targetVelW = f.raXnI_targetVelW;
 					const Vec4V rbXnI_velMultiplierW = f.rbXnI_velMultiplierW;
@@ -1883,9 +1862,9 @@ namespace Dy
 					// On XBox this clamping code uses the vector simple pipe rather than vector float,
 					// which eliminates a lot of stall cycles
 
-					const BoolV clamp = FIsGrtr(FAbs(totalImpulse), FMul(staticFrictionScale, maxFrictionImpulse));
+					const BoolV clamp = FIsGrtr(FAbs(totalImpulse), FMul(frictionScale, maxFrictionImpulse));
 
-					const FloatV totalClamped = FMin(FMul(dynamicFrictionScale, maxDynFrictionImpulse), FMax(FMul(dynamicFrictionScale, negMaxDynFrictionImpulse), totalImpulse));
+					const FloatV totalClamped = FMin(FMul(frictionScale, maxDynFrictionImpulse), FMax(FMul(frictionScale, negMaxDynFrictionImpulse), totalImpulse));
 
 					const FloatV newAppliedForce = FSel(clamp, totalClamped, totalImpulse);
 
@@ -3108,13 +3087,9 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 
 				const FloatV frictionScale0 = FLoad(f0.frictionScale);
 				const FloatV frictionScale1 = FLoad(f1.frictionScale);
-				const FloatV staticFrictionScale0 = FLoad(f0.staticFrictionScale);
-				const FloatV staticFrictionScale1 = FLoad(f1.staticFrictionScale);
 				const FloatV frictionScaleEpsilon = FLoad(1e-6f);
-				const FloatV invStaticFrictionScale0 = FRecip(FMax(staticFrictionScale0, frictionScaleEpsilon));
-				const FloatV invStaticFrictionScale1 = FRecip(FMax(staticFrictionScale1, frictionScaleEpsilon));
-				const FloatV invDynamicFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
-				const FloatV invDynamicFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
+				const FloatV invFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
+				const FloatV invFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
 				const FloatV biasScale = FLoad(f0.biasScale);
 
 				const FloatV appliedForce0 = FLoad(f0.appliedForce);
@@ -3160,19 +3135,15 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 				// On XBox this clamping code uses the vector simple pipe rather than vector float,
 				// which eliminates a lot of stall cycles
 
-				const FloatV scaledTotalImpulseStatic0 = FMul(totalImpulse0, invStaticFrictionScale0);
-				const FloatV scaledTotalImpulseStatic1 = FMul(totalImpulse1, invStaticFrictionScale1);
-				const FloatV scaledTotalImpulseStatic = FSqrt(FAdd(FMul(scaledTotalImpulseStatic0, scaledTotalImpulseStatic0), FMul(scaledTotalImpulseStatic1, scaledTotalImpulseStatic1)));
+				const FloatV scaledTotalImpulse0 = FMul(totalImpulse0, invFrictionScale0);
+				const FloatV scaledTotalImpulse1 = FMul(totalImpulse1, invFrictionScale1);
+				const FloatV scaledTotalImpulse = FSqrt(FAdd(FMul(scaledTotalImpulse0, scaledTotalImpulse0), FMul(scaledTotalImpulse1, scaledTotalImpulse1)));
 
-				const FloatV scaledTotalImpulseDynamic0 = FMul(totalImpulse0, invDynamicFrictionScale0);
-				const FloatV scaledTotalImpulseDynamic1 = FMul(totalImpulse1, invDynamicFrictionScale1);
-				const FloatV scaledTotalImpulseDynamic = FSqrt(FAdd(FMul(scaledTotalImpulseDynamic0, scaledTotalImpulseDynamic0), FMul(scaledTotalImpulseDynamic1, scaledTotalImpulseDynamic1)));
+				const BoolV clamp = FIsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
-				const BoolV clamp = FIsGrtr(scaledTotalImpulseStatic, maxFrictionImpulse);
+				const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulse), scaledTotalImpulse);
 
-				const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulseDynamic), scaledTotalImpulseDynamic);
-
-				const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulseDynamic, zero), FDiv(scaledTotalClamped, scaledTotalImpulseDynamic), zero);
+				const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulse, zero), FDiv(scaledTotalClamped, scaledTotalImpulse), zero);
 
 				const FloatV newAppliedForce0 = FMul(ratio, totalImpulse0);
 				const FloatV newAppliedForce1 = FMul(ratio, totalImpulse1);
@@ -3217,8 +3188,7 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 				const Vec3V raXnI = f.angDeltaVA;
 				const Vec3V rbXnI = f.angDeltaVB;
 
-				const FloatV dynamicFrictionScale = FLoad(f.frictionScale);
-				const FloatV staticFrictionScale = FLoad(f.staticFrictionScale);
+				const FloatV frictionScale = FLoad(f.frictionScale);
 
 				const FloatV appliedForce = FLoad(f.appliedForce);
 				const FloatV velMultiplier = V4GetW(rbXn_velMultiplierW);
@@ -3248,9 +3218,9 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 				// On XBox this clamping code uses the vector simple pipe rather than vector float,
 				// which eliminates a lot of stall cycles
 
-				const BoolV clamp = FIsGrtr(FAbs(totalImpulse), FMul(maxFrictionImpulse, staticFrictionScale));
+				const BoolV clamp = FIsGrtr(FAbs(totalImpulse), FMul(maxFrictionImpulse, frictionScale));
 
-				const FloatV totalClamped = FMin(FMul(maxDynFrictionImpulse, dynamicFrictionScale), FMax(FMul(negMaxDynFrictionImpulse, dynamicFrictionScale), totalImpulse));
+				const FloatV totalClamped = FMin(FMul(maxDynFrictionImpulse, frictionScale), FMax(FMul(negMaxDynFrictionImpulse, frictionScale), totalImpulse));
 
 				const FloatV newAppliedForce = FSel(clamp, totalClamped, totalImpulse);
 

@@ -293,10 +293,9 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV staticFrictionScale = f.getStaticFrictionScale();
-				const FloatV dynamicFrictionScale = f.getDynamicFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, staticFrictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, dynamicFrictionScale);
+				const FloatV frictionScale = f.getFrictionScale();
+				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
+				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
 				const FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
 				
 				const FloatV targetVel = FLoad(f.targetVel);
@@ -440,10 +439,9 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV staticFrictionScale = f.getStaticFrictionScale();
-				const FloatV dynamicFrictionScale = f.getDynamicFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, staticFrictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, dynamicFrictionScale);
+				const FloatV frictionScale = f.getFrictionScale();
+				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
+				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
 
 				const FloatV targetVel = FLoad(f.targetVel);
 	
@@ -1126,10 +1124,9 @@ void solveExtContact(const PxSolverConstraintDesc& desc, Vec3V& linVel0, Vec3V& 
 				const FloatV appliedForce = V4GetW(normalXYZ_appliedForceW);
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
-				const FloatV staticFrictionScale = f.getStaticFrictionScale();
-				const FloatV dynamicFrictionScale = f.getDynamicFrictionScale();
-				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, staticFrictionScale);
-				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, dynamicFrictionScale);
+				const FloatV frictionScale = f.getFrictionScale();
+				const FloatV maxFrictionImpulse = FMul(maxFrictionImpulseBase, frictionScale);
+				const FloatV maxDynFrictionImpulse = FMul(maxDynFrictionImpulseBase, frictionScale);
 
 				const FloatV targetVel = FLoad(f.targetVel);
 
