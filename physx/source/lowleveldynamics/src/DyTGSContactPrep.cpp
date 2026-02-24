@@ -1709,7 +1709,11 @@ namespace Dy
 					SolverContactFrictionStep& f1 = frictions[i + 1];
 					PxPrefetchLine(&frictions[i + 2], 128);
 
-					const FloatV frictionScale = FLoad(f0.frictionScale);
+					const FloatV frictionScale0 = FLoad(f0.frictionScale);
+					const FloatV frictionScale1 = FLoad(f1.frictionScale);
+					const FloatV frictionScaleEpsilon = FLoad(1e-6f);
+					const FloatV invFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
+					const FloatV invFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
 
 					const Vec4V normalXYZ_ErrorW0 = f0.normalXYZ_ErrorW;
 					const Vec4V raXnI_targetVelW0 = f0.raXnI_targetVelW;
@@ -1786,13 +1790,15 @@ namespace Dy
 					// On XBox this clamping code uses the vector simple pipe rather than vector float,
 					// which eliminates a lot of stall cycles
 
-					const FloatV totalImpulse = FSqrt(FAdd(FMul(totalImpulse0, totalImpulse0), FMul(totalImpulse1, totalImpulse1)));
+					const FloatV scaledTotalImpulse0 = FMul(totalImpulse0, invFrictionScale0);
+					const FloatV scaledTotalImpulse1 = FMul(totalImpulse1, invFrictionScale1);
+					const FloatV scaledTotalImpulse = FSqrt(FAdd(FMul(scaledTotalImpulse0, scaledTotalImpulse0), FMul(scaledTotalImpulse1, scaledTotalImpulse1)));
 
-					const BoolV clamp = FIsGrtr(totalImpulse, FMul(frictionScale, maxFrictionImpulse));
+					const BoolV clamp = FIsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
-					const FloatV totalClamped = FSel(clamp, FMin(FMul(frictionScale, maxDynFrictionImpulse), totalImpulse), totalImpulse);
+					const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulse), scaledTotalImpulse);
 
-					const FloatV ratio = FSel(FIsGrtr(totalImpulse, zero), FDiv(totalClamped, totalImpulse), zero);
+					const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulse, zero), FDiv(scaledTotalClamped, scaledTotalImpulse), zero);
 
 					const FloatV newAppliedForce0 = FMul(totalImpulse0, ratio);
 					const FloatV newAppliedForce1 = FMul(totalImpulse1, ratio);
@@ -3079,7 +3085,11 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 				const Vec3V raXnI1 = f1.angDeltaVA;
 				const Vec3V rbXnI1 = f1.angDeltaVB;
 
-				const FloatV frictionScale = FLoad(f0.frictionScale);
+				const FloatV frictionScale0 = FLoad(f0.frictionScale);
+				const FloatV frictionScale1 = FLoad(f1.frictionScale);
+				const FloatV frictionScaleEpsilon = FLoad(1e-6f);
+				const FloatV invFrictionScale0 = FRecip(FMax(frictionScale0, frictionScaleEpsilon));
+				const FloatV invFrictionScale1 = FRecip(FMax(frictionScale1, frictionScaleEpsilon));
 				const FloatV biasScale = FLoad(f0.biasScale);
 
 				const FloatV appliedForce0 = FLoad(f0.appliedForce);
@@ -3125,13 +3135,15 @@ bool /*doFriction*/, const PxReal minPenetration, const PxReal elapsedTimeF32, D
 				// On XBox this clamping code uses the vector simple pipe rather than vector float,
 				// which eliminates a lot of stall cycles
 
-				const FloatV totalImpulse = FSqrt(FAdd(FMul(totalImpulse0, totalImpulse0), FMul(totalImpulse1, totalImpulse1)));
+				const FloatV scaledTotalImpulse0 = FMul(totalImpulse0, invFrictionScale0);
+				const FloatV scaledTotalImpulse1 = FMul(totalImpulse1, invFrictionScale1);
+				const FloatV scaledTotalImpulse = FSqrt(FAdd(FMul(scaledTotalImpulse0, scaledTotalImpulse0), FMul(scaledTotalImpulse1, scaledTotalImpulse1)));
 
-				const BoolV clamp = FIsGrtr(totalImpulse, FMul(maxFrictionImpulse, frictionScale));
+				const BoolV clamp = FIsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
-				const FloatV totalClamped = FSel(clamp, FMin(FMul(maxDynFrictionImpulse, frictionScale), totalImpulse), totalImpulse);
+				const FloatV scaledTotalClamped = FSel(clamp, FMin(maxDynFrictionImpulse, scaledTotalImpulse), scaledTotalImpulse);
 
-				const FloatV ratio = FSel(FIsGrtr(totalImpulse, zero), FDiv(totalClamped, totalImpulse), zero);
+				const FloatV ratio = FSel(FIsGrtr(scaledTotalImpulse, zero), FDiv(scaledTotalClamped, scaledTotalImpulse), zero);
 
 				const FloatV newAppliedForce0 = FMul(ratio, totalImpulse0);
 				const FloatV newAppliedForce1 = FMul(ratio, totalImpulse1);

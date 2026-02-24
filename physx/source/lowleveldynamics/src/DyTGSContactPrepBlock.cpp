@@ -149,6 +149,7 @@ struct SolverContactFrictionStepBlock
 	Vec4V velMultiplier;
 	Vec4V targetVel;
 	Vec4V biasCoefficient;
+	Vec4V frictionScale;
 };
 
 struct SolverConstraint1DHeaderStep4
@@ -1190,6 +1191,7 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f0->velMultiplier = velMultiplier;
 						f0->biasCoefficient = V4Splat(frictionBiasScale);
 						f0->targetVel = targetVel;
+						f0->frictionScale = maxImpulseScale;
 					}
 
 					{
@@ -1269,7 +1271,7 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f1->rbXnI[1] = delAngVel1Y;
 						f1->rbXnI[2] = delAngVel1Z;
 
-						const Vec4V velMultiplier = V4Mul(anisotropicDynamicScale4, V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero)));
+						const Vec4V velMultiplier = V4Mul(maxImpulseScale, V4Sel(V4IsGrtr(resp, zero), V4Div(p84, resp), zero));
 
 						Vec4V error = V4MulAdd(t1Z, errorZ, V4MulAdd(t1Y, errorY, V4Mul(t1X, errorX)));
 
@@ -1285,6 +1287,7 @@ static void setupFinalizeSolverConstraints4Step(PxTGSSolverContactDesc* PX_RESTR
 						f1->velMultiplier = velMultiplier;
 						f1->targetVel = targetVel;
 						f1->biasCoefficient = V4Splat(frictionBiasScale);
+						f1->frictionScale = V4Mul(maxImpulseScale, anisotropicDynamicScale4);
 					}
 				}
 
@@ -2713,14 +2716,22 @@ static void solveContact4_Block(const PxSolverConstraintDesc* PX_RESTRICT desc, 
 				const Vec4V totalImpulse0 = V4NegMulSub(normalVel0, f0.velMultiplier, tmp10);
 				const Vec4V totalImpulse1 = V4NegMulSub(normalVel1, f1.velMultiplier, tmp11);
 
-				const Vec4V totalImpulse = V4Sqrt(V4MulAdd(totalImpulse0, totalImpulse0, V4Mul(totalImpulse1, totalImpulse1)));
+				const Vec4V frictionScale0 = f0.frictionScale;
+				const Vec4V frictionScale1 = f1.frictionScale;
+				const Vec4V frictionScaleEpsilon = V4Load(1e-6f);
+				const Vec4V invFrictionScale0 = V4Recip(V4Max(frictionScale0, frictionScaleEpsilon));
+				const Vec4V invFrictionScale1 = V4Recip(V4Max(frictionScale1, frictionScaleEpsilon));
 
-				const BoolV clamped = V4IsGrtr(totalImpulse, maxFrictionImpulse);
+				const Vec4V scaledTotalImpulse0 = V4Mul(totalImpulse0, invFrictionScale0);
+				const Vec4V scaledTotalImpulse1 = V4Mul(totalImpulse1, invFrictionScale1);
+				const Vec4V scaledTotalImpulse = V4Sqrt(V4MulAdd(scaledTotalImpulse0, scaledTotalImpulse0, V4Mul(scaledTotalImpulse1, scaledTotalImpulse1)));
+
+				const BoolV clamped = V4IsGrtr(scaledTotalImpulse, maxFrictionImpulse);
 
 				broken = BOr(broken, clamped);
 
-				const Vec4V totalClamped = V4Sel(broken, V4Min(totalImpulse, maxDynFrictionImpulse), totalImpulse);
-				const Vec4V ratio = V4Sel(V4IsGrtr(totalImpulse, vZero), V4Div(totalClamped, totalImpulse), vZero);
+				const Vec4V scaledTotalClamped = V4Sel(broken, V4Min(scaledTotalImpulse, maxDynFrictionImpulse), scaledTotalImpulse);
+				const Vec4V ratio = V4Sel(V4IsGrtr(scaledTotalImpulse, vZero), V4Div(scaledTotalClamped, scaledTotalImpulse), vZero);
 
 				const Vec4V newAppliedForce0 = V4Mul(totalImpulse0, ratio);
 				const Vec4V newAppliedForce1 = V4Mul(totalImpulse1, ratio);
