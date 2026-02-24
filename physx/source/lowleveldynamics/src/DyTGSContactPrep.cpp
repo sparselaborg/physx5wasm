@@ -696,8 +696,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
-				const PxReal frictionScaleT0 = frictionScale * anisotropicDynamicRatio;
-				const PxReal frictionScaleT1 = frictionScale;
+				const PxReal frictionScaleT0 = frictionScale;
+				const PxReal frictionScaleT1 = frictionScale * anisotropicDynamicRatio;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{
@@ -1213,8 +1213,8 @@ namespace Dy
 				header->frictionBrokenWritebackByte = writeback;
 
 				PxReal frictionScale = (contactBase0->materialFlags & PxMaterialFlag::eIMPROVED_PATCH_FRICTION && frictionPatch.anchorCount == 2) ? 0.5f : 1.f;
-				const PxReal frictionScaleT0 = frictionScale * anisotropicDynamicRatio;
-				const PxReal frictionScaleT1 = frictionScale;
+				const PxReal frictionScaleT0 = frictionScale;
+				const PxReal frictionScaleT1 = frictionScale * anisotropicDynamicRatio;
 
 				for (PxU32 j = 0; j < frictionPatch.anchorCount; j++)
 				{

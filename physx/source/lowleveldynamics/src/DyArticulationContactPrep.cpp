@@ -461,7 +461,7 @@ void setupFinalizeExtSolverContacts(
 			const FloatV orthoThreshold = FLoad(0.70710678f);
 			const FloatV p1 = FLoad(0.0001f);
 			const FloatV anisotropicVelocityThresholdSq = FLoad(1e-6f);
-			const FloatV anisotropicDynamicScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
+			const FloatV anisotropicSecondaryScale = FLoad(dynamicFriction > 0.0f ? (anisotropicDynamicFriction / dynamicFriction) : 1.0f);
 			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
 			const FloatV normalX = V3GetX(normal);
 			const FloatV normalY = V3GetY(normal);
@@ -524,7 +524,7 @@ void setupFinalizeExtSolverContacts(
 					FloatV resp = FAdd(cfm, getImpulseResponse(b0, resp0, deltaV0, d0, angD0,
 															 b1, resp1, deltaV1, d1, angD1, reinterpret_cast<Cm::SpatialVectorV*>(Z)));
 
-					const FloatV velMultiplier = FMul(anisotropicDynamicScale, FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero));
+					const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero);
 
 					FloatV targetVel = V3Dot(tvel, t0);
 
@@ -559,7 +559,7 @@ void setupFinalizeExtSolverContacts(
 
 					//const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FMul(p8, FRecip(resp)), zero);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero);
+					const FloatV velMultiplier = FMul(anisotropicSecondaryScale, FSel(FIsGrtr(resp, FLoad(DY_ARTICULATION_MIN_RESPONSE)), FDiv(p8, resp), zero));
 
 					FloatV targetVel = V3Dot(tvel, t1);
 
