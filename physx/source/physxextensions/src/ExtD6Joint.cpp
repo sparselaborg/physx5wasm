@@ -486,6 +486,33 @@ void D6Joint::setDriveVelocity(const PxVec3& linear, const PxVec3& angular, bool
 #endif
 }
 
+// OK: Function to set drive position and velocity at the same time for efficiency.
+void D6Joint::setDrivePositionVelocity(const PxTransform& pose, const PxVec3& linear, const PxVec3& angular, bool autowake)
+{
+	PX_CHECK_AND_RETURN(pose.isSane(), "PxD6Joint::setDrivePositionVelocity: pose invalid");
+	PX_CHECK_AND_RETURN(linear.isFinite() && angular.isFinite(), "PxD6Joint::setDrivePositionVelocity: velocity invalid");
+
+	const PxTransform normalizedPose = pose.getNormalized();
+	D6JointData& jointData = data();
+	jointData.drivePosition = normalizedPose;
+	jointData.driveLinearVelocity = linear;
+	jointData.driveAngularVelocity = angular;
+	if(autowake)
+		wakeUpActors();
+	markDirty();
+
+	OMNI_PVD_SET(OMNI_PVD_CONTEXT_HANDLE, PxD6Joint, drivePosition, static_cast<PxD6Joint&>(*this), normalizedPose)
+#if PX_SUPPORT_OMNI_PVD
+	OMNI_PVD_WRITE_SCOPE_BEGIN(pvdWriter, pvdRegData)
+
+	const PxD6Joint& joint = static_cast<const PxD6Joint&>(*this);
+	OMNI_PVD_SET_EXPLICIT(pvdWriter, pvdRegData, OMNI_PVD_CONTEXT_HANDLE, PxD6Joint, driveLinVelocity, joint, linear)
+	OMNI_PVD_SET_EXPLICIT(pvdWriter, pvdRegData, OMNI_PVD_CONTEXT_HANDLE, PxD6Joint, driveAngVelocity, joint, angular)
+
+	OMNI_PVD_WRITE_SCOPE_END
+#endif
+}
+
 PxD6JointGPUIndex D6Joint::getGPUIndex() const
 {
 	PX_COMPILE_TIME_ASSERT(sizeof(PxD6JointGPUIndex) == sizeof(PxConstraintGPUIndex));

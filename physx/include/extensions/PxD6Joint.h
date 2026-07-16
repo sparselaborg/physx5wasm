@@ -540,6 +540,20 @@ public:
 	*/
 	virtual void				getDriveVelocity(PxVec3& linear, PxVec3& angular)	const	= 0;
 
+	// OK: Function to set drive position and velocity at the same time for efficiency.
+	/**
+	\brief Set the drive goal pose and velocity with a single constraint update.
+
+	This is equivalent to calling setDrivePosition() and setDriveVelocity(), but
+	marks the constraint dirty and wakes its actors only once.
+
+	\param[in] pose The goal drive pose if positional drive is in use.
+	\param[in] linear The goal velocity for linear drive.
+	\param[in] angular The goal velocity for angular drive.
+	\param[in] autowake Whether to wake the attached actors.
+	*/
+	virtual void				setDrivePositionVelocity(const PxTransform& pose, const PxVec3& linear, const PxVec3& angular, bool autowake = true) = 0;
+
 	/**
 	\brief Returns the GPU D6 joint index.
 

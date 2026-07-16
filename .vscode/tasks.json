@@ -1,0 +1,46 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PhysX WASM: Configure all",
+			"type": "process",
+			"command": "bash",
+			"windows": {
+				"command": "C:\\Program Files\\Git\\bin\\bash.exe"
+			},
+			"args": [
+				"./generate.sh"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "PhysX WASM: Build all",
+			"type": "process",
+			"command": "bash",
+			"windows": {
+				"command": "C:\\Program Files\\Git\\bin\\bash.exe"
+			},
+			"args": [
+				"./make.sh"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"dependsOn": "PhysX WASM: Configure all",
+			"dependsOrder": "sequence",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": "$gcc",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			}
+		}
+	]
+}

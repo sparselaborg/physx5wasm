@@ -67,7 +67,7 @@ PT: to try:
 //#define CHECKPOINT(x)	printf(x);
 
 //#pragma warning (disable : 4702)
-#if PX_INTEL_FAMILY && !defined(PX_SIMD_DISABLED)
+#if PX_INTEL_FAMILY && !defined(PX_SIMD_DISABLED) && !defined(__EMSCRIPTEN__)
 	#define ABP_SIMD_OVERLAP
 #endif
 

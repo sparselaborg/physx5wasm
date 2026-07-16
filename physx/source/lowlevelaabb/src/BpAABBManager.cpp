@@ -54,7 +54,7 @@ using namespace Cm;
 using namespace aos;
 
 static const bool gSingleThreaded = false;
-#if PX_INTEL_FAMILY && !defined(PX_SIMD_DISABLED)
+#if PX_INTEL_FAMILY && !defined(PX_SIMD_DISABLED) && !defined(__EMSCRIPTEN__)
 	#define ABP_SIMD_OVERLAP
 #endif
 #ifdef ABP_SIMD_OVERLAP

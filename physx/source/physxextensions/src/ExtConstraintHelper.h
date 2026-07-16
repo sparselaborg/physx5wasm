@@ -291,8 +291,8 @@ namespace Ext
 				raOut = ra;
 				rbOut = rb;
 
-				for(Px1DConstraint* front = mCurrent; front < current; front++)
-					front->flags |= Px1DConstraintFlag::eOUTPUT_FORCE;
+				// OK: Locked axes intentionally do not report constraint force. Drive rows
+				// still opt into eOUTPUT_FORCE when they are generated.
 
 				mCurrent = current;
 			}
