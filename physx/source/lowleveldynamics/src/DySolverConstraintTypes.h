@@ -47,6 +47,8 @@ enum SolverConstraintType
 	DY_SC_TYPE_BLOCK_RB_CONTACT,
 	DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT,
 	DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	DY_SC_TYPE_RB_1D_3,					// RB-only three-body 1D constraint
 	// PT: the following types are only used in the PGS PF solver
 	DY_SC_TYPE_FRICTION,
 	DY_SC_TYPE_STATIC_FRICTION,

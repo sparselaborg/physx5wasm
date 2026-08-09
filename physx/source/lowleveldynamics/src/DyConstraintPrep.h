@@ -78,6 +78,9 @@ namespace Dy
 								   PxConstraintAllocator& allocator,
 								   PxReal dt, PxReal invdt, PxReal biasCoefficient);
 
+	// OK: Three body constraints
+	PxU32 SetupSolverConstraint3(SolverConstraintShaderPrepDesc& shaderDesc, PxSolverConstraintPrepDesc& prepDesc, PxConstraintAllocator& allocator, PxSolverBody& body2, const PxSolverBodyData& data2, const PxTransform& bodyFrame2, PxReal dt, PxReal invdt, PxReal biasCoefficient);
+
 	class ConstraintHelper
 	{
 	public:

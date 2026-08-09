@@ -473,6 +473,18 @@ public:
 	*/
 	virtual const void*	getConstantBlock()	const	= 0;
 
+	// OK: Three body constraints
+	/**
+	\brief Obtain an optional third rigid actor affected by this constraint.
+
+	The returned actor is treated as an additional rigid-body solver endpoint. The
+	constraint rows describe motion of actor 0 relative to actor 1, with the
+	missing closure Jacobian for the third actor derived by the SDK.
+
+	\return The third rigid actor, or NULL for an ordinary two-body constraint.
+	*/
+	virtual PxRigidActor*	getThirdActor()	const	{ return NULL; }
+
 	/**
 	\brief Let the connector know it has been connected to a constraint.
 	*/

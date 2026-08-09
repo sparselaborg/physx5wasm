@@ -82,6 +82,8 @@ public:
 
 	PX_FORCE_INLINE	Sc::ConstraintCore&			getCore()			{ return mCore; }
 	PX_FORCE_INLINE	const Sc::ConstraintCore&	getCore() const		{ return mCore; }
+	// OK: Three body constraints
+	PX_FORCE_INLINE	PxRigidActor*				getThirdActor() const	{ return mActor2; }
 	static PX_FORCE_INLINE size_t				getCoreOffset()		{ return PX_OFFSET_OF_RT(NpConstraint, mCore); }
 
 	PX_FORCE_INLINE	bool						isDirty() const		{ return mCore.isDirty(); }
@@ -89,10 +91,12 @@ public:
 private:
 					PxRigidActor*				mActor0;
 					PxRigidActor*				mActor1;
+					// OK: Three body constraints
+					PxRigidActor*				mActor2;
 					Sc::ConstraintCore			mCore;
 
-					void						addConnectors(PxRigidActor* actor0, PxRigidActor* actor1);
-					void						removeConnectors(const char* errorMsg0, const char* errorMsg1);
+					void						addConnectors(PxRigidActor* actor0, PxRigidActor* actor1, PxRigidActor* actor2);
+					void						removeConnectors(const char* errorMsg0, const char* errorMsg1, const char* errorMsg2);
 
 	PX_INLINE		void						scSetFlags(PxConstraintFlags f)
 												{

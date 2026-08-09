@@ -698,6 +698,8 @@ void DynamicsTGSContext::setupDescs(IslandContextStep& mIslandContext, const Sol
 	PxU32* mBodyRemapTable, PxU32 mSolverBodyOffset, PxsContactManagerOutputIterator& /*outputs*/)
 {
 	PX_PROFILE_ZONE("setupDescs", mContextID);
+	// OK: Three body constraints
+	mIslandContext.mHasThreeBodyConstraints = false;
 
 	ThreadContext& threadContext = *mIslandContext.mThreadContext;
 	PxSolverConstraintDesc* contactDescPtr = mObjects.constraintDescs;
@@ -726,7 +728,24 @@ void DynamicsTGSContext::setupDescs(IslandContextStep& mIslandContext, const Sol
 				Dy::Constraint* constraint = mIslandManager.getConstraint(edgeId);
 				setDescFromIndices_Constraints(desc, islandSim, edgeId, mBodyRemapTable, mSolverBodyOffset, mSolverBodyVelPool.begin());
 				desc.constraint = reinterpret_cast<PxU8*>(constraint);
-				desc.constraintType = DY_SC_TYPE_RB_1D;
+				// OK: Three body constraints
+				ConstraintBody2* body2 = constraint->body2;
+				if(body2)
+				{
+					mIslandContext.mHasThreeBodyConstraints = true;
+					const PxNodeIndex body2NodeIndex(body2->nodeIndex);
+					const IG::Node& body2Node = islandSim.getNode(body2NodeIndex);
+					PX_ASSERT(body2Node.getNodeType() == IG::Node::eRIGID_BODY_TYPE);
+					const PxU32 activeIndex = islandSim.getActiveNodeIndex(body2NodeIndex);
+					const PxU32 index = body2Node.isKinematic() ? activeIndex : mBodyRemapTable[activeIndex] + mSolverBodyOffset;
+					body2->solverBodyIndex = index + 1;
+					body2->solverBody = &mSolverBodyVelPool[index + 1];
+					desc.constraintType = DY_SC_TYPE_RB_1D_3;
+				}
+				else
+				{
+					desc.constraintType = DY_SC_TYPE_RB_1D;
+				}
 				contactDescPtr++;
 
 				GET_NEXT_ISLAND_EDGE
@@ -953,7 +972,8 @@ void DynamicsTGSContext::createSolverConstraints(PxSolverConstraintDesc* contact
 				unit.mFrictionPatchCount = blockDescs[i].frictionCount;
 			}
 		}
-		else if (contactDescPtr[startIdx].constraintType == DY_SC_TYPE_RB_1D)
+		// OK: Three body constraints
+		else if (contactDescPtr[startIdx].constraintType == DY_SC_TYPE_RB_1D || contactDescPtr[startIdx].constraintType == DY_SC_TYPE_RB_1D_3)
 		{
 			SolverConstraintShaderPrepDesc shaderPrepDescs[4];
 			PxTGSSolverConstraintPrepDesc prepDescs[4];
@@ -1022,11 +1042,25 @@ void DynamicsTGSContext::createSolverConstraints(PxSolverConstraintDesc* contact
 #endif
 			if (buildState != SolverConstraintPrepState::eSUCCESS)
 			{
-				for (PxU32 a = startIdx, i = 0; a < endIdx; ++a, i++)
+				// OK: Three body constraints
+				if(contactDescPtr[startIdx].constraintType == DY_SC_TYPE_RB_1D_3)
 				{
-					PxReal clampedInvDt = invStepDt;
-					SetupSolverConstraintStep(shaderPrepDescs[i], prepDescs[i], blockAllocator, stepDt, totalDt, clampedInvDt, invTotalDt, mLengthScale,
-						jointBiasCoefficient);
+					for(PxU32 a = startIdx, i = 0; a < endIdx; ++a, i++)
+					{
+						PxReal clampedInvDt = invStepDt;
+						const ConstraintBody2* body2 = shaderPrepDescs[i].constraint->body2;
+						PX_ASSERT(body2);
+						const PxU32 body2Index = body2->solverBodyIndex;
+						SetupSolverConstraintStep3(shaderPrepDescs[i], prepDescs[i], blockAllocator, mSolverBodyVelPool[body2Index], mSolverBodyTxInertiaPool[body2Index], mSolverBodyDataPool2[body2Index], body2->bodyCore->body2World, body2Index, stepDt, totalDt, clampedInvDt, invTotalDt, mLengthScale, jointBiasCoefficient);
+					}
+				}
+				else
+				{
+					for(PxU32 a = startIdx, i = 0; a < endIdx; ++a, i++)
+					{
+						PxReal clampedInvDt = invStepDt;
+						SetupSolverConstraintStep(shaderPrepDescs[i], prepDescs[i], blockAllocator, stepDt, totalDt, clampedInvDt, invTotalDt, mLengthScale, jointBiasCoefficient);
+					}
 				}
 			}
 		}
@@ -1039,6 +1073,8 @@ void solveExtContactBlock	(DY_TGS_SOLVE_METHOD_PARAMS);
 void solveExt1DBlock		(DY_TGS_SOLVE_METHOD_PARAMS);
 void solveContact4			(DY_TGS_SOLVE_METHOD_PARAMS);
 void solve1D4				(DY_TGS_SOLVE_METHOD_PARAMS);
+// OK: Three body constraints
+void solve1D3Block			(DY_TGS_SOLVE_METHOD_PARAMS);
 
 TGSSolveBlockMethod g_SolveTGSMethods[] = 
 {
@@ -1051,12 +1087,16 @@ TGSSolveBlockMethod g_SolveTGSMethods[] =
 	solveContact4,			// DY_SC_TYPE_BLOCK_RB_CONTACT
 	solveContact4,			// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	solve1D4,				// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	solve1D3Block,			// DY_SC_TYPE_RB_1D_3
 };
 
 void writeBackContact	(DY_TGS_WRITEBACK_METHOD_PARAMS);
 void writeBack1D		(DY_TGS_WRITEBACK_METHOD_PARAMS);
 void writeBackContact4	(DY_TGS_WRITEBACK_METHOD_PARAMS);
 void writeBack1D4		(DY_TGS_WRITEBACK_METHOD_PARAMS);
+// OK: Three body constraints
+void writeBack1D3		(DY_TGS_WRITEBACK_METHOD_PARAMS);
 
 TGSWriteBackMethod g_WritebackTGSMethods[] =
 {
@@ -1069,6 +1109,8 @@ TGSWriteBackMethod g_WritebackTGSMethods[] =
 	writeBackContact4,		// DY_SC_TYPE_BLOCK_RB_CONTACT
 	writeBackContact4,		// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	writeBack1D4,			// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	writeBack1D3,			// DY_SC_TYPE_RB_1D_3
 };
 
 void solveConclude1DBlock			(DY_TGS_CONCLUDE_METHOD_PARAMS);
@@ -1077,6 +1119,8 @@ void solveConcludeContact4			(DY_TGS_CONCLUDE_METHOD_PARAMS);
 void solveConclude1D4				(DY_TGS_CONCLUDE_METHOD_PARAMS);
 void solveConcludeContactExtBlock	(DY_TGS_CONCLUDE_METHOD_PARAMS);
 void solveConclude1DBlockExt		(DY_TGS_CONCLUDE_METHOD_PARAMS);
+// OK: Three body constraints
+void solveConclude1D3Block			(DY_TGS_CONCLUDE_METHOD_PARAMS);
 
 TGSSolveConcludeMethod g_SolveConcludeTGSMethods[] =
 {
@@ -1089,6 +1133,8 @@ TGSSolveConcludeMethod g_SolveConcludeTGSMethods[] =
 	solveConcludeContact4,			// DY_SC_TYPE_BLOCK_RB_CONTACT
 	solveConcludeContact4,			// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	solveConclude1D4,				// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	solveConclude1D3Block,			// DY_SC_TYPE_RB_1D_3
 };
 
 static void solveConstraintsIteration(const PxSolverConstraintDesc* const contactDescPtr, const PxConstraintBatchHeader* const batchHeaders, PxU32 nbHeaders,
@@ -1916,8 +1962,8 @@ public:
 		Dy::FeatherstoneArticulation** eaArticulations = threadContext.mArticulationArray;
 
 		// PT: maxPartitions = PX_MAX_U32 in PGS. Was there a reason to limit it for TGS?
-		const ConstraintPartitionIn in(	reinterpret_cast<PxU8*>(mSolverBodyData), mIslandContext.mCounts.bodies, sizeof(PxTGSSolverBodyVel),
-										eaArticulations, numArticulations, mContactDescPtr, totalDescCount, 64, false);
+		// OK: Three body constraints
+		const ConstraintPartitionIn in(reinterpret_cast<PxU8*>(mSolverBodyData), mIslandContext.mCounts.bodies, sizeof(PxTGSSolverBodyVel), eaArticulations, numArticulations, mContactDescPtr, totalDescCount, 64, false, mIslandContext.mHasThreeBodyConstraints);
 		//args.mBitField = &threadContext.mPartitionNormalizationBitmap;	// PT: removed, unused
 
 		ConstraintPartitionOut out(mIslandContext.mObjects.orderedConstraintDescs, mIslandContext.mObjects.tempConstraintDescs, &threadContext.mConstraintsPerPartition);

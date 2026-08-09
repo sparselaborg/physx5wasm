@@ -52,7 +52,8 @@ static void releaseInteraction(ConstraintInteraction* interaction, const Constra
 	scene.getConstraintInteractionPool().destroy(interaction);
 }
 
-Sc::ConstraintSim::ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore* r1, Scene& scene) :
+// OK: Three body constraints
+Sc::ConstraintSim::ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore* r1, RigidCore* r2, Scene& scene) :
 	mScene		(scene),
 	mCore		(core),
 	mInteraction(NULL),
@@ -60,6 +61,9 @@ Sc::ConstraintSim::ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore*
 {
 	mBodies[0] = (r0 && (r0->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r0->getSim()) : 0;
 	mBodies[1] = (r1 && (r1->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r1->getSim()) : 0;
+	// OK: Three body constraints
+	BodySim* body2 = (r2 && (r2->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r2->getSim()) : 0;
+	mLowLevelConstraint.body2 = NULL;
 	
 	const PxU32 id = scene.getConstraintIDTracker().createID();
 
@@ -71,8 +75,11 @@ Sc::ConstraintSim::ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore*
 	writeBackPool.resize(PxMax(writeBackPool.size(), id + 1));
 	writeBackPool[id].initialize();
 
-	if(!createLLConstraint())
+	// OK: Three body constraints
+	if(!createLLConstraint(body2))
+	{
 		return;
+	}
 
 	PxReal linBreakForce, angBreakForce;
 	core.getBreakForce(linBreakForce, angBreakForce);
@@ -99,7 +106,8 @@ Sc::ConstraintSim::~ConstraintSim()
 	mCore.setSim(NULL);
 }
 
-static PX_FORCE_INLINE void setLLBodies(Dy::Constraint& c, BodySim* b0, BodySim* b1)
+// OK: Three body constraints
+static PX_FORCE_INLINE void setLLBodies(Dy::Constraint& c, BodySim* b0, BodySim* b1, BodySim* b2)
 {
 	PxsRigidBody* body0 = b0 ? &b0->getLowLevelBody() : NULL;
 	PxsRigidBody* body1 = b1 ? &b1->getLowLevelBody() : NULL;
@@ -109,9 +117,30 @@ static PX_FORCE_INLINE void setLLBodies(Dy::Constraint& c, BodySim* b0, BodySim*
 
 	c.bodyCore0 = body0 ? &body0->getCore() : NULL;
 	c.bodyCore1 = body1 ? &body1->getCore() : NULL;
+	// OK: Three body constraints
+
+	if(b2)
+	{
+		if(!c.body2)
+		{
+			c.body2 = reinterpret_cast<Dy::ConstraintBody2*>(PX_ALLOC(sizeof(Dy::ConstraintBody2), "ConstraintBody2"));
+		}
+
+		PxsRigidBody* body2 = &b2->getLowLevelBody();
+		c.body2->solverBody = NULL;
+		c.body2->bodyCore = &body2->getCore();
+		c.body2->bodySim = b2;
+		c.body2->nodeIndex = PxU32(b2->getNodeIndex().getInd());
+		c.body2->solverBodyIndex = 0;
+	}
+	else
+	{
+		PX_FREE(c.body2);
+		c.body2 = NULL;
+	}
 }
 
-bool Sc::ConstraintSim::createLLConstraint()
+bool Sc::ConstraintSim::createLLConstraint(BodySim* body2)
 {
 	ConstraintCore& core = getCore();
 	const PxU32 constantBlockSize = core.getConstantBlockSize();
@@ -136,7 +165,8 @@ bool Sc::ConstraintSim::createLLConstraint()
 	llc.minResponseThreshold	= core.getMinResponseThreshold();
 
 	//llc.index = mLowLevelConstraint.index;
-	setLLBodies(llc, mBodies[0], mBodies[1]);
+	// OK: Three body constraints
+	setLLBodies(llc, mBodies[0], mBodies[1], body2);
 
 	return true;
 }
@@ -145,9 +175,13 @@ void Sc::ConstraintSim::destroyLLConstraint()
 {
 	if(mLowLevelConstraint.constantBlock)
 		mScene.deallocateConstraintBlock(mLowLevelConstraint.constantBlock, mLowLevelConstraint.constantBlockSize);
+	// OK: Three body constraints
+
+	PX_FREE(mLowLevelConstraint.body2);
+	mLowLevelConstraint.body2 = NULL;
 }
 
-void Sc::ConstraintSim::setBodies(RigidCore* r0, RigidCore* r1)
+void Sc::ConstraintSim::setBodies(RigidCore* r0, RigidCore* r1, RigidCore* r2)
 {
 	PX_ASSERT(mInteraction);
 
@@ -157,8 +191,10 @@ void Sc::ConstraintSim::setBodies(RigidCore* r0, RigidCore* r1)
 
 	BodySim* b0 = (r0 && (r0->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r0->getSim()) : 0;
 	BodySim* b1 = (r1 && (r1->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r1->getSim()) : 0;
+	// OK: Three body constraints
+	BodySim* b2 = (r2 && (r2->getActorCoreType() != PxActorType::eRIGID_STATIC)) ? static_cast<BodySim*>(r2->getSim()) : 0;
 
-	setLLBodies(mLowLevelConstraint, b0, b1);
+	setLLBodies(mLowLevelConstraint, b0, b1, b2);
 
 	mBodies[0] = b0;
 	mBodies[1] = b1;

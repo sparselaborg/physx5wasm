@@ -356,7 +356,8 @@ namespace Sc
 					void						addBody(PxActor* actor, BatchInsertionState&, PxBounds3* outBounds, bool compound);
 					void						finishBatchInsertion(BatchInsertionState&);
 
-					void						addConstraint(ConstraintCore&, RigidCore*, RigidCore*);
+					// OK: Three body constraints
+					void						addConstraint(ConstraintCore&, RigidCore*, RigidCore*, RigidCore*);
 					void						removeConstraint(ConstraintCore&);
 
 					void						addConstraintToMap(ConstraintCore& constraint, RigidCore*, RigidCore*);

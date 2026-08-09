@@ -783,6 +783,8 @@ public:
 	void setupDescTask()
 	{
 		PX_PROFILE_ZONE("SetupDescs", mContextID);
+		// OK: Three body constraints
+		mIslandContext.mHasThreeBodyConstraints = false;
 
 		ThreadContext& threadContext = *mIslandContext.mThreadContext;
 		PxSolverConstraintDesc* contactDescPtr = threadContext.mContactDescPtr;
@@ -811,7 +813,24 @@ public:
 					Dy::Constraint* constraint = mIslandManager.getConstraint(edgeId);
 					mContext.setDescFromIndices_Constraints(desc, islandSim, edgeId, mBodyRemapTable, mSolverBodyOffset);
 					desc.constraint = reinterpret_cast<PxU8*>(constraint);
-					desc.constraintType = DY_SC_TYPE_RB_1D;
+					// OK: Three body constraints
+					ConstraintBody2* body2 = constraint->body2;
+					if(body2)
+					{
+						mIslandContext.mHasThreeBodyConstraints = true;
+						const PxNodeIndex body2NodeIndex(body2->nodeIndex);
+						const IG::Node& body2Node = islandSim.getNode(body2NodeIndex);
+						PX_ASSERT(body2Node.getNodeType() == IG::Node::eRIGID_BODY_TYPE);
+						const PxU32 activeIndex = islandSim.getActiveNodeIndex(body2NodeIndex);
+						const PxU32 index = body2Node.isKinematic() ? activeIndex : mBodyRemapTable[activeIndex] + mSolverBodyOffset;
+						body2->solverBodyIndex = index + 1;
+						body2->solverBody = &mContext.mSolverBodyPool[index];
+						desc.constraintType = DY_SC_TYPE_RB_1D_3;
+					}
+					else
+					{
+						desc.constraintType = DY_SC_TYPE_RB_1D;
+					}
 					contactDescPtr++;
 
 					GET_NEXT_ISLAND_EDGE
@@ -1145,8 +1164,8 @@ static void partitionConstraints(IslandContext& islandContext, PxSolverBody* sol
 		FeatherstoneArticulation** eaArticulations = threadContext.mArticulationArray;
 
 		// PT: maxPartitions = 64 in TGS
-		const ConstraintPartitionIn in(	reinterpret_cast<PxU8*>(solverBodies), islandContext.mCounts.bodies, sizeof(PxSolverBody),
-										eaArticulations, numArticulations, descBegin, descCount, PX_MAX_U32, false);
+		// OK: Three body constraints
+		const ConstraintPartitionIn in(reinterpret_cast<PxU8*>(solverBodies), islandContext.mCounts.bodies, sizeof(PxSolverBody), eaArticulations, numArticulations, descBegin, descCount, PX_MAX_U32, false, islandContext.mHasThreeBodyConstraints);
 				
 		ConstraintPartitionOut out(threadContext.orderedContactConstraints, threadContext.tempConstraintDescArray, &threadContext.mConstraintsPerPartition);
 
@@ -2300,7 +2319,8 @@ static PxU32 createFinalizeContacts_Parallel(PxSolverBodyData* solverBodyData, T
 				axisConstraintCount += blockDescs[i].axisConstraintCount;
 			}
 		}
-		else if(contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_1D)
+		// OK: Three body constraints
+		else if(contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_1D || contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_1D_3)
 		{
 			SolverConstraintShaderPrepDesc shaderDescs[4];
 			PxSolverConstraintPrepDesc descs[4];
@@ -2356,9 +2376,23 @@ static PxU32 createFinalizeContacts_Parallel(PxSolverBodyData* solverBodyData, T
 			if(state != SolverConstraintPrepState::eSUCCESS)
 #endif
 			{
-				for(PxU32 i = 0; i < header.stride; ++i)
+				// OK: Three body constraints
+				if(contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_1D_3)
 				{
-					axisConstraintCount += SetupSolverConstraint(shaderDescs[i], descs[i], blockAllocator, dt, invDt, jointBiasCoefficient);
+					for(PxU32 i = 0; i < header.stride; ++i)
+					{
+						const ConstraintBody2* body2 = shaderDescs[i].constraint->body2;
+						PX_ASSERT(body2);
+						const PxU32 body2Index = body2->solverBodyIndex;
+						axisConstraintCount += SetupSolverConstraint3(shaderDescs[i], descs[i], blockAllocator, *reinterpret_cast<PxSolverBody*>(body2->solverBody), solverBodyData[body2Index], body2->bodyCore->body2World, dt, invDt, jointBiasCoefficient);
+					}
+				}
+				else
+				{
+					for(PxU32 i = 0; i < header.stride; ++i)
+					{
+						axisConstraintCount += SetupSolverConstraint(shaderDescs[i], descs[i], blockAllocator, dt, invDt, jointBiasCoefficient);
+					}
 				}
 			}
 		}

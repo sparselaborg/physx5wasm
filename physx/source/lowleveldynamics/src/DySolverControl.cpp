@@ -46,6 +46,8 @@ void solveContact_BStaticBlock		(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock			(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock_Static	(DY_PGS_SOLVE_METHOD_PARAMS);
 void solve1D4_Block					(DY_PGS_SOLVE_METHOD_PARAMS);
+// OK: Three body constraints
+void solve1D3Block					(DY_PGS_SOLVE_METHOD_PARAMS);
 
 void solve1DConcludeBlock				(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactConcludeBlock			(DY_PGS_SOLVE_METHOD_PARAMS);
@@ -55,6 +57,8 @@ void solveContact_BStaticConcludeBlock	(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock_Conclude		(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock_ConcludeStatic(DY_PGS_SOLVE_METHOD_PARAMS);
 void solve1D4Block_Conclude				(DY_PGS_SOLVE_METHOD_PARAMS);
+// OK: Three body constraints
+void solve1D3ConcludeBlock				(DY_PGS_SOLVE_METHOD_PARAMS);
 
 void solve1DBlockWriteBack				(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactBlockWriteBack			(DY_PGS_SOLVE_METHOD_PARAMS);
@@ -64,6 +68,8 @@ void solveContact_BStaticBlockWriteBack	(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock_WriteBack		(DY_PGS_SOLVE_METHOD_PARAMS);
 void solveContactPreBlock_WriteBackStatic(DY_PGS_SOLVE_METHOD_PARAMS);
 void solve1D4Block_WriteBack			(DY_PGS_SOLVE_METHOD_PARAMS);
+// OK: Three body constraints
+void solve1D3Block_WriteBack				(DY_PGS_SOLVE_METHOD_PARAMS);
 
 // PT: not sure what happened, these ones were declared but not actually used
 //void writeBack1DBlock				(DY_PGS_SOLVE_METHOD_PARAMS);
@@ -84,6 +90,8 @@ SolveBlockMethod gVTableSolveBlock[] PX_UNUSED_ATTRIBUTE =
 	solveContactPreBlock,			// DY_SC_TYPE_BLOCK_RB_CONTACT
 	solveContactPreBlock_Static,	// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	solve1D4_Block,					// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	solve1D3Block,					// DY_SC_TYPE_RB_1D_3
 };
 
 SolveWriteBackBlockMethod gVTableSolveWriteBackBlock[] PX_UNUSED_ATTRIBUTE = 
@@ -97,6 +105,8 @@ SolveWriteBackBlockMethod gVTableSolveWriteBackBlock[] PX_UNUSED_ATTRIBUTE =
 	solveContactPreBlock_WriteBack,			// DY_SC_TYPE_BLOCK_RB_CONTACT
 	solveContactPreBlock_WriteBackStatic,	// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	solve1D4Block_WriteBack,				// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	solve1D3Block_WriteBack,				// DY_SC_TYPE_RB_1D_3
 };
 
 SolveBlockMethod gVTableSolveConcludeBlock[] PX_UNUSED_ATTRIBUTE = 
@@ -110,6 +120,8 @@ SolveBlockMethod gVTableSolveConcludeBlock[] PX_UNUSED_ATTRIBUTE =
 	solveContactPreBlock_Conclude,			// DY_SC_TYPE_BLOCK_RB_CONTACT
 	solveContactPreBlock_ConcludeStatic,	// DY_SC_TYPE_BLOCK_STATIC_RB_CONTACT
 	solve1D4Block_Conclude,					// DY_SC_TYPE_BLOCK_1D,
+	// OK: Three body constraints
+	solve1D3ConcludeBlock,					// DY_SC_TYPE_RB_1D_3
 };
 
 struct SolverDt

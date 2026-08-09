@@ -44,6 +44,16 @@ class PxsRigidBody;
 namespace Dy
 {
 
+// OK: Three body constraints
+struct ConstraintBody2
+{
+	void*					solverBody;
+	PxsBodyCore*			bodyCore;
+	void*					bodySim;
+	PxU32					nodeIndex;
+	PxU32					solverBodyIndex;
+};
+
 #if PX_VC 
     #pragma warning(push)
 	#pragma warning( disable : 4324 ) // Padding was added at the end of a structure because of a __declspec(align) value.
@@ -68,13 +78,18 @@ public:
 	PxsBodyCore*			bodyCore1;
 	PxU32					index;
 	PxReal					minResponseThreshold;
+	// OK: Three body constraints
+	ConstraintBody2*		body2;
 }
 PX_ALIGN_SUFFIX(16);
 #if PX_VC 
      #pragma warning(pop) 
 #endif
 
-#if !PX_P64_FAMILY
+// OK: Three body constraints
+#if PX_P64_FAMILY
+PX_COMPILE_TIME_ASSERT(80==sizeof(Constraint));
+#else
 PX_COMPILE_TIME_ASSERT(48==sizeof(Constraint));
 #endif
 

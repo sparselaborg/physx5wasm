@@ -39,14 +39,13 @@ namespace Dy
 // PT: input of partitionContactConstraints
 struct ConstraintPartitionIn
 {
-	ConstraintPartitionIn(	PxU8* bodies, PxU32 nbBodies, PxU32 stride,
-							Dy::FeatherstoneArticulation** articulations, PxU32 nbArticulations,
-							const PxSolverConstraintDesc* contactConstraintDescs, PxU32 nbContactConstraintDescs,
-							PxU32 maxPartitions, bool forceStaticConstraintsToSolver) :
+	// OK: Three body constraints
+	ConstraintPartitionIn(PxU8* bodies, PxU32 nbBodies, PxU32 stride, Dy::FeatherstoneArticulation** articulations, PxU32 nbArticulations, const PxSolverConstraintDesc* contactConstraintDescs, PxU32 nbContactConstraintDescs, PxU32 maxPartitions, bool forceStaticConstraintsToSolver, bool hasThreeBodyConstraints = false) :
 		mBodies	(bodies), mNumBodies(nbBodies), mStride(stride),
 		mArticulationPtrs(articulations), mNumArticulationPtrs(nbArticulations),
 		mContactConstraintDescriptors(contactConstraintDescs), mNumContactConstraintDescriptors(nbContactConstraintDescs),
-		mMaxPartitions(maxPartitions), mForceStaticConstraintsToSolver(forceStaticConstraintsToSolver)
+		mMaxPartitions(maxPartitions), mForceStaticConstraintsToSolver(forceStaticConstraintsToSolver),
+		mHasThreeBodyConstraints(hasThreeBodyConstraints)
 	{
 	}
 
@@ -59,6 +58,8 @@ struct ConstraintPartitionIn
 	PxU32							mNumContactConstraintDescriptors;
 	PxU32							mMaxPartitions;						// PT: limit the number of "resizes" beyond the initial 32
 	bool							mForceStaticConstraintsToSolver;	// PT: only for PGS + point-friction
+	// OK: Three body constraints
+	bool							mHasThreeBodyConstraints;
 };
 
 // PT: output of partitionContactConstraints

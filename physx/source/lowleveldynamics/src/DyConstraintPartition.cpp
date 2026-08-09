@@ -27,6 +27,8 @@
 #include "DyConstraintPartition.h"
 #include "foundation/PxHashMap.h"
 #include "DyFeatherstoneArticulation.h"
+// OK: Three body constraints
+#include "DyConstraint.h"
 
 using namespace physx;
 
@@ -72,6 +74,25 @@ namespace
 // PT: for template args but it would be so much easier to use bodies[2] instead of bodyA/bodyB in the structs
 #define BODYA	false
 #define BODYB	true
+
+// OK: Three body constraints
+template<const bool hasThreeBodyConstraints>
+static PX_FORCE_INLINE PxSolverBody* getRigidBody2(const PxSolverConstraintDesc& desc)
+{
+	if(!hasThreeBodyConstraints)
+	{
+		return NULL;
+	}
+
+	if(desc.constraintType != DY_SC_TYPE_RB_1D_3)
+	{
+		return NULL;
+	}
+
+	const Constraint* constraint = reinterpret_cast<const Constraint*>(desc.constraint);
+	PX_ASSERT(constraint->body2);
+	return reinterpret_cast<PxSolverBody*>(constraint->body2->solverBody);
+}
 
 class ClassificationBase
 {
@@ -180,6 +201,8 @@ static PX_FORCE_INLINE void storeRigidBodyProgress(const PxSolverConstraintDesc&
 }
 
 // PT: regular version without articulations
+// OK: Three body constraints
+template<const bool hasThreeBodyConstraints>
 class RigidBodyClassification : public ClassificationBase
 {
 	PX_NOCOPY(RigidBodyClassification)
@@ -225,6 +248,16 @@ public:
 		activeB = indexB < mBodyCount;
 		bodyAProgress = desc.bodyA->solverProgress;
 		bodyBProgress = desc.bodyB->solverProgress;
+		// OK: Three body constraints
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				bodyAProgress |= body2->solverProgress;
+			}
+		}
 		return activeA && activeB;
 	}
 
@@ -251,12 +284,33 @@ public:
 	{
 		desc.bodyA->solverProgress = bodyAProgress;
 		desc.bodyB->solverProgress = bodyBProgress;
+		// OK: Three body constraints
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				body2->solverProgress = bodyAProgress;
+			}
+		}
 	}
 
 	PX_FORCE_INLINE void storeProgress(const PxSolverConstraintDesc& desc, PxU32 bodyAProgress, PxU32 bodyBProgress, PxU16 availablePartition)
 	{
 		storeRigidBodyProgress<BODYA>(desc, bodyAProgress, availablePartition);
 		storeRigidBodyProgress<BODYB>(desc, bodyBProgress, availablePartition);
+		// OK: Three body constraints
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				body2->solverProgress = bodyAProgress;
+				body2->maxSolverNormalProgress = PxMax(body2->maxSolverNormalProgress, availablePartition);
+			}
+		}
 	}
 };
 
@@ -288,6 +342,8 @@ static PX_FORCE_INLINE void storeArticulationProgress(const PxSolverConstraintDe
 }
 
 // PT: "extended" version with articulations
+// OK: Three body constraints
+template<const bool hasThreeBodyConstraints>
 class ExtendedRigidBodyClassification : public ClassificationBase
 {
 	PX_NOCOPY(ExtendedRigidBodyClassification)
@@ -321,6 +377,17 @@ public:
 			desc.bodyB->solverProgress = bodyBProgress;
 		else
 			getArticulationB(desc)->solverProgress = bodyBProgress;
+		// OK: Three body constraints
+
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				body2->solverProgress = bodyAProgress;
+			}
+		}
 	}
 
 	PX_FORCE_INLINE void clearState()
@@ -402,6 +469,17 @@ public:
 			activeB = true;
 			bodyBProgress = articulationB->solverProgress;
 		}
+		// OK: Three body constraints
+
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				bodyAProgress |= body2->solverProgress;
+			}
+		}
 		return !hasStatic;
 	}
 
@@ -454,6 +532,18 @@ public:
 			storeRigidBodyProgress<BODYB>(desc, bodyBProgress, availablePartition);
 		else
 			storeArticulationProgress<BODYB>(desc, bodyBProgress, availablePartition);
+		// OK: Three body constraints
+
+		PxSolverBody* body2 = getRigidBody2<hasThreeBodyConstraints>(desc);
+		if(body2)
+		{
+			const uintptr_t index2 = uintptr_t(reinterpret_cast<PxU8*>(body2) - mBodies) / mBodyStride;
+			if(index2 < mBodyCount)
+			{
+				body2->solverProgress = bodyAProgress;
+				body2->maxSolverNormalProgress = PxMax(body2->maxSolverNormalProgress, availablePartition);
+			}
+		}
 	}
 };
 
@@ -855,7 +945,9 @@ static void batchConstraints(
 		outputOverflowConstraints(constraintsPerPartition, eaOverflowConstraintDescriptors, numOverflows, eaOrderedConstraintDescriptors);
 }
 
-PxU32 partitionContactConstraints(ConstraintPartitionOut& out, const ConstraintPartitionIn& in)
+// OK: Three body constraints
+template<const bool hasThreeBodyConstraints>
+static PxU32 partitionContactConstraints_(ConstraintPartitionOut& out, const ConstraintPartitionIn& in)
 {
 	const PxU32 numBodies = in.mNumBodies;
 	const PxU32	numArticulations = in.mNumArticulationPtrs;
@@ -873,7 +965,8 @@ PxU32 partitionContactConstraints(ConstraintPartitionOut& out, const ConstraintP
 
 	if(numArticulations == 0)
 	{
-		RigidBodyClassification classification(in.mBodies, numBodies, stride);
+		// OK: Three body constraints
+		RigidBodyClassification<hasThreeBodyConstraints> classification(in.mBodies, numBodies, stride);
 		batchConstraints<false>(in.mContactConstraintDescriptors, in.mNumContactConstraintDescriptors,
 								classification, constraintsPerPartition,
 								out.mOverflowConstraintDescriptors, in.mMaxPartitions,
@@ -882,7 +975,8 @@ PxU32 partitionContactConstraints(ConstraintPartitionOut& out, const ConstraintP
 	}
 	else
 	{
-		ExtendedRigidBodyClassification classification(in.mBodies, numBodies, stride, in.mArticulationPtrs, numArticulations, in.mForceStaticConstraintsToSolver);
+		// OK: Three body constraints
+		ExtendedRigidBodyClassification<hasThreeBodyConstraints> classification(in.mBodies, numBodies, stride, in.mArticulationPtrs, numArticulations, in.mForceStaticConstraintsToSolver);
 		batchConstraints<true>(	in.mContactConstraintDescriptors, in.mNumContactConstraintDescriptors,
 								classification, constraintsPerPartition,
 								out.mOverflowConstraintDescriptors, in.mMaxPartitions,
@@ -915,6 +1009,12 @@ PxU32 partitionContactConstraints(ConstraintPartitionOut& out, const ConstraintP
 	}
 
 	return maxPartition;
+}
+
+// OK: Three body constraints
+PxU32 partitionContactConstraints(ConstraintPartitionOut& out, const ConstraintPartitionIn& in)
+{
+	return in.mHasThreeBodyConstraints ? partitionContactConstraints_<true>(out, in) : partitionContactConstraints_<false>(out, in);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

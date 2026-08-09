@@ -71,10 +71,13 @@ void Sc::ConstraintCore::getForce(PxVec3& force, PxVec3& torque) const
 		mSim->getForce(force, torque);
 }
 
-void Sc::ConstraintCore::setBodies(RigidCore* r0v, RigidCore* r1v)
+// OK: Three body constraints
+void Sc::ConstraintCore::setBodies(RigidCore* r0v, RigidCore* r1v, RigidCore* r2v)
 {
 	if(mSim)
-		mSim->setBodies(r0v, r1v);
+	{
+		mSim->setBodies(r0v, r1v, r2v);
+	}
 }
 
 void Sc::ConstraintCore::setBreakForce(PxReal linear, PxReal angular)

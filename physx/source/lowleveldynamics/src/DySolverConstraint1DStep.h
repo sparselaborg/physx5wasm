@@ -154,6 +154,21 @@ namespace physx
 		};
 		PX_COMPILE_TIME_ASSERT(PX_OFFSET_OF(SolverConstraint1DHeaderStep, angOrthoAxis0_recipResponseW) % 16 == 0);
 
+		// OK: Three body constraints
+		struct SolverConstraint1DHeaderStep3 : public SolverConstraint1DHeaderStep
+		{
+			PxTGSSolverBodyVel*	body2;
+			PxU32				body2DataIndex;
+			PxReal				invMass2D2;
+#if !PX_P64_FAMILY
+			PxU32				pad2;
+#endif
+			PxVec4				rC0World;
+			PxVec4				rC1World;
+		};
+
+		PX_COMPILE_TIME_ASSERT((sizeof(SolverConstraint1DHeaderStep3) & 0x0f) == 0);
+
 
 		PX_FORCE_INLINE void init(SolverConstraint1DHeaderStep& h,
 			PxU8 count,
@@ -211,6 +226,17 @@ namespace physx
 			Cm::SpatialVector deltaVA_;
 			Cm::SpatialVector deltaVB_;
 		};
+
+		// OK: Three body constraints
+		struct SolverConstraint1DStep3 : public SolverConstraint1DStep
+		{
+			PxVec3		lin2;
+			PxReal		pad0;
+			PxVec3		directAng2;
+			PxReal		pad1;
+		};
+
+		PX_COMPILE_TIME_ASSERT((sizeof(SolverConstraint1DStep3) & 0x0f) == 0);
 
 		PX_FORCE_INLINE void init(SolverConstraint1DStep& c,
 			const PxVec3& _linear0, const PxVec3& _linear1,

@@ -82,6 +82,9 @@ namespace physx
 			const PxReal dt, const PxReal totalDt, const PxReal invdt, const PxReal invTotalDt,
 			const PxReal lengthScale, const PxReal biasCoefficient);
 
+		// OK: Three body constraints
+		PxU32 SetupSolverConstraintStep3(SolverConstraintShaderPrepDesc& shaderDesc, PxTGSSolverConstraintPrepDesc& prepDesc, PxConstraintAllocator& allocator, PxTGSSolverBodyVel& body2, const PxTGSSolverBodyTxInertia& body2TxI, const PxTGSSolverBodyData& bodyData2, const PxTransform& bodyFrame2, PxU32 body2DataIndex, const PxReal dt, const PxReal totalDt, const PxReal invdt, const PxReal invTotalDt, const PxReal lengthScale, const PxReal biasCoefficient);
+
 		PxU32 setupSolverConstraintStep(
 			const PxTGSSolverConstraintPrepDesc& prepDesc,
 			PxConstraintAllocator& allocator,

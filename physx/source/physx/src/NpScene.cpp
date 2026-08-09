@@ -4437,13 +4437,17 @@ template<> struct ScSceneFns<NpConstraint>
 	{ 
 		PxRigidActor* a0, * a1;
 		v.getActors(a0, a1);
+		// OK: Three body constraints
+		PxRigidActor* a2 = v.getThirdActor();
 		NpActor* sc0 = NpActor::getNpActor(a0);
 		NpActor* sc1 = NpActor::getNpActor(a1);
+		NpActor* sc2 = NpActor::getNpActor(a2);
 
 		PX_ASSERT((!sc0) || (!(sc0->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))));
 		PX_ASSERT((!sc1) || (!(sc1->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))));
+		PX_ASSERT((!sc2) || (!(sc2->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))));
 		
-		s.addConstraint(v.getCore(), sc0 ? &sc0->getScRigidCore() : NULL, sc1 ? &sc1->getScRigidCore() : NULL);
+		s.addConstraint(v.getCore(), sc0 ? &sc0->getScRigidCore() : NULL, sc1 ? &sc1->getScRigidCore() : NULL, sc2 ? &sc2->getScRigidCore() : NULL);
 		OMNI_PVD_ADD(OMNI_PVD_CONTEXT_HANDLE, PxScene, constraints, static_cast<PxScene &>(*v.getNpScene()), static_cast<PxConstraint &>(v))
 	}
 	static PX_FORCE_INLINE void remove(Sc::Scene& s, NpConstraint& v, bool /*wakeOnLostTouch*/)

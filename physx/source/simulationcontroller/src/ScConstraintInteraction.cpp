@@ -47,11 +47,17 @@ ConstraintInteraction::ConstraintInteraction(ConstraintSim* constraint, RigidSim
 
 	BodySim* b0 = mConstraint->getBody(0);
 	BodySim* b1 = mConstraint->getBody(1);
+	// OK: Three body constraints
+	BodySim* b2 = mConstraint->getBody(2);
 
 	if(b0)
 		b0->onConstraintAttach();
 	if(b1)
 		b1->onConstraintAttach();
+	if(b2 && b2 != b0 && b2 != b1)
+	{
+		b2->onConstraintAttach();
+	}
 
 	IG::SimpleIslandManager* simpleIslandManager = getScene().getSimpleIslandManager();
 	mEdgeIndex = simpleIslandManager->addConstraint(&mConstraint->getLowLevelConstraint(), b0 ? b0->getNodeIndex() : PxNodeIndex(), b1 ? b1->getNodeIndex() : PxNodeIndex(), this);
@@ -86,11 +92,17 @@ void ConstraintInteraction::destroy()
 
 	BodySim* b0 = mConstraint->getBody(0);
 	BodySim* b1 = mConstraint->getBody(1);
+	// OK: Three body constraints
+	BodySim* b2 = mConstraint->getBody(2);
 
 	if(b0)
 		b0->onConstraintDetach();  // Note: Has to be done AFTER the interaction has unregistered from the actors
 	if(b1)
 		b1->onConstraintDetach();  // Note: Has to be done AFTER the interaction has unregistered from the actors
+	if(b2 && b2 != b0 && b2 != b1)
+	{
+		b2->onConstraintDetach();
+	}
 
 	clearInteractionFlag(InteractionFlag::eIS_ACTIVE);  // ensures that broken constraints do not go into the list of active breakable constraints anymore
 }

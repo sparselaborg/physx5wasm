@@ -53,7 +53,8 @@ namespace Sc
 											ConstraintCore(PxConstraintConnector& connector, const PxConstraintShaderTable& shaders, PxU32 dataSize);
 											~ConstraintCore()	{}
 
-					void					setBodies(RigidCore* r0v, RigidCore* r1v);
+					// OK: Three body constraints
+					void					setBodies(RigidCore* r0v, RigidCore* r1v, RigidCore* r2v);
 
 					PxConstraint*			getPxConstraint();
 					const PxConstraint*		getPxConstraint()								const;

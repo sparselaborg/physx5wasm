@@ -180,6 +180,82 @@ static void solve1D(const PxSolverConstraintDesc& desc)
 	PX_ASSERT(b1.angularState.isFinite());
 }
 
+// OK: Three body constraints
+static void solve1D3(const PxSolverConstraintDesc& desc)
+{
+	PxSolverBody& b0 = *desc.bodyA;
+	PxSolverBody& b1 = *desc.bodyB;
+
+	PxU8* PX_RESTRICT bPtr = desc.constraint;
+	if(bPtr == NULL)
+	{
+		return;
+	}
+
+	const SolverConstraint1DHeader3* PX_RESTRICT header = reinterpret_cast<SolverConstraint1DHeader3*>(bPtr);
+	SolverConstraint1D3* PX_RESTRICT base = reinterpret_cast<SolverConstraint1D3*>(bPtr + sizeof(SolverConstraint1DHeader3));
+	PxSolverBody& b2 = *header->body2;
+
+	Vec3V linVel0 = V3LoadA(b0.linearVelocity);
+	Vec3V linVel1 = V3LoadA(b1.linearVelocity);
+	Vec3V linVel2 = V3LoadA(b2.linearVelocity);
+	Vec3V angState0 = V3LoadA(b0.angularState);
+	Vec3V angState1 = V3LoadA(b1.angularState);
+	Vec3V angState2 = V3LoadA(b2.angularState);
+
+	const FloatV invMass0 = FLoad(header->invMass0D0);
+	const FloatV invMass1 = FLoad(header->invMass1D1);
+	const FloatV invMass2 = FLoad(header->invMass2D2);
+	const FloatV invInertiaScale0 = FLoad(header->angularInvMassScale0);
+	const FloatV invInertiaScale1 = FLoad(header->angularInvMassScale1);
+	const FloatV invInertiaScale2 = FLoad(header->angularInvMassScale2);
+
+	const PxU32 count = header->count;
+	for(PxU32 i = 0; i < count; ++i, ++base)
+	{
+		PxPrefetchLine(base + 1);
+		SolverConstraint1D3& c = *base;
+		const Vec3V lin0 = V3LoadA(c.lin0);
+		const Vec3V lin1 = V3LoadA(c.lin1);
+		const Vec3V lin2 = V3LoadA(c.lin2);
+		const Vec3V ang0 = V3LoadA(c.ang0);
+		const Vec3V ang1 = V3LoadA(c.ang1);
+		const Vec3V ang2 = V3LoadA(c.ang2);
+
+		const Vec3V v0 = V3MulAdd(linVel0, lin0, V3Mul(angState0, ang0));
+		const Vec3V v1 = V3MulAdd(linVel1, lin1, V3Mul(angState1, ang1));
+		const Vec3V v2 = V3MulAdd(linVel2, lin2, V3Mul(angState2, ang2));
+		const FloatV normalVel = V3SumElems(V3Add(V3Sub(v0, v1), v2));
+
+		const FloatV appliedForce = FLoad(c.appliedForce);
+		const FloatV unclampedForce = FScaleAdd(FLoad(c.impulseMultiplier), appliedForce, FScaleAdd(FLoad(c.velMultiplier), normalVel, FLoad(c.constant)));
+		const FloatV clampedForce = FMin(FLoad(c.maxImpulse), FMax(FLoad(c.minImpulse), unclampedForce));
+		const FloatV deltaF = FSub(clampedForce, appliedForce);
+		FStore(clampedForce, &c.appliedForce);
+
+		linVel0 = V3ScaleAdd(lin0, FMul(deltaF, invMass0), linVel0);
+		linVel1 = V3NegScaleSub(lin1, FMul(deltaF, invMass1), linVel1);
+		linVel2 = V3ScaleAdd(lin2, FMul(deltaF, invMass2), linVel2);
+		angState0 = V3ScaleAdd(ang0, FMul(deltaF, invInertiaScale0), angState0);
+		angState1 = V3ScaleAdd(ang1, FMul(deltaF, invInertiaScale1), angState1);
+		angState2 = V3ScaleAdd(ang2, FMul(deltaF, invInertiaScale2), angState2);
+	}
+
+	V3StoreA(linVel0, b0.linearVelocity);
+	V3StoreA(linVel1, b1.linearVelocity);
+	V3StoreA(linVel2, b2.linearVelocity);
+	V3StoreA(angState0, b0.angularState);
+	V3StoreA(angState1, b1.angularState);
+	V3StoreA(angState2, b2.angularState);
+
+	PX_ASSERT(b0.linearVelocity.isFinite());
+	PX_ASSERT(b0.angularState.isFinite());
+	PX_ASSERT(b1.linearVelocity.isFinite());
+	PX_ASSERT(b1.angularState.isFinite());
+	PX_ASSERT(b2.linearVelocity.isFinite());
+	PX_ASSERT(b2.angularState.isFinite());
+}
+
 namespace physx
 {
 namespace Dy
@@ -204,6 +280,22 @@ void conclude1D(const PxSolverConstraintDesc& desc)
 	//The final row may no longer be at the end of the reserved memory range. This can happen if there were degenerate 
 	//constraint rows with articulations, in which case the rows are skipped.
 	//PX_ASSERT(desc.constraint + getConstraintLength(desc) == base);
+}
+
+// OK: Three body constraints
+void conclude1D3(const PxSolverConstraintDesc& desc)
+{
+	SolverConstraint1DHeader3* header = reinterpret_cast<SolverConstraint1DHeader3*>(desc.constraint);
+	if(header == NULL)
+	{
+		return;
+	}
+
+	SolverConstraint1D3* base = reinterpret_cast<SolverConstraint1D3*>(desc.constraint + sizeof(SolverConstraint1DHeader3));
+	for(PxU32 i = 0; i < header->count; ++i)
+	{
+		base[i].constant = base[i].unbiasedConstant;
+	}
 }
 
 // ==============================================================
@@ -628,6 +720,34 @@ void writeBack1D(const PxSolverConstraintDesc& desc)
 	}
 }
 
+// OK: Three body constraints
+void writeBack1D3(const PxSolverConstraintDesc& desc)
+{
+	ConstraintWriteback* writeback = reinterpret_cast<ConstraintWriteback*>(desc.writeBack);
+	if(!writeback)
+	{
+		return;
+	}
+
+	SolverConstraint1DHeader3* header = reinterpret_cast<SolverConstraint1DHeader3*>(desc.constraint);
+	const SolverConstraint1D3* base = reinterpret_cast<SolverConstraint1D3*>(desc.constraint + sizeof(SolverConstraint1DHeader3));
+	PxVec3 lin(0.0f), ang(0.0f);
+	for(PxU32 i = 0; i < header->count; ++i)
+	{
+		const SolverConstraint1D3& c = base[i];
+		if(c.flags & DY_SC_FLAG_OUTPUT_FORCE)
+		{
+			lin += c.lin0 * c.appliedForce;
+			ang += c.ang0Writeback * c.appliedForce;
+		}
+	}
+
+	ang -= header->body0WorldOffset.cross(lin);
+	writeback->linearImpulse = lin;
+	writeback->angularImpulse = ang;
+	writeback->broken = header->breakable ? PxU32(lin.magnitude() > header->linBreakImpulse || ang.magnitude() > header->angBreakImpulse) : 0;
+}
+
 void solve1DBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 {
 	PX_UNUSED(cache);
@@ -639,6 +759,35 @@ void solve1DBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 		solve1D(desc[a-1]);
 	}
 	solve1D(desc[constraintCount-1]);
+}
+
+// OK: Three body constraints
+void solve1D3Block(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	PX_ASSERT(constraintCount == 1);
+	PX_UNUSED(constraintCount);
+	PX_UNUSED(cache);
+	solve1D3(desc[0]);
+}
+
+// OK: Three body constraints
+void solve1D3ConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	PX_ASSERT(constraintCount == 1);
+	PX_UNUSED(constraintCount);
+	PX_UNUSED(cache);
+	solve1D3(desc[0]);
+	conclude1D3(desc[0]);
+}
+
+// OK: Three body constraints
+void solve1D3Block_WriteBack(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	PX_ASSERT(constraintCount == 1);
+	PX_UNUSED(constraintCount);
+	PX_UNUSED(cache);
+	solve1D3(desc[0]);
+	writeBack1D3(desc[0]);
 }
 
 void solve1DConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)

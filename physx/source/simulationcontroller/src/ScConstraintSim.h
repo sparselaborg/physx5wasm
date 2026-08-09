@@ -54,10 +54,11 @@ namespace Sc
 			eCHECK_MAX_FORCE_EXCEEDED	=	(1<<2),	// This constraint will get tested for breakage at the end of the sim step
 			eBROKEN						=	(1<<3)
 		};
-												ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore* r1, Scene& scene);
+												// OK: Three body constraints
+												ConstraintSim(ConstraintCore& core, RigidCore* r0, RigidCore* r1, RigidCore* r2, Scene& scene);
 												~ConstraintSim();
 
-						void					setBodies(RigidCore* r0, RigidCore* r1);
+						void					setBodies(RigidCore* r0, RigidCore* r1, RigidCore* r2);
 
 						void					setBreakForceLL(PxReal linear, PxReal angular);
 		PX_FORCE_INLINE	void					setMinResponseThresholdLL(PxReal threshold)	{ mLowLevelConstraint.minResponseThreshold = threshold;	}
@@ -70,7 +71,9 @@ namespace Sc
 		PX_FORCE_INLINE	ConstraintCore&			getCore()							const	{ return mCore;					}
 		PX_FORCE_INLINE	BodySim*				getBody(PxU32 i)					const	// for static actors or world attached constraints NULL is returned
 												{
-													return mBodies[i];
+													// OK: Three body constraints
+													PX_ASSERT(i < 3);
+													return i < 2 ? mBodies[i] : (mLowLevelConstraint.body2 ? reinterpret_cast<BodySim*>(mLowLevelConstraint.body2->bodySim) : NULL);
 												}
 
 						void					getForce(PxVec3& force, PxVec3& torque);
@@ -85,7 +88,8 @@ namespace Sc
 						PxConstraintGPUIndex	getGPUIndex() const;
 
 	private:
-						bool					createLLConstraint();
+						// OK: Three body constraints
+						bool					createLLConstraint(BodySim* body2);
 						void					destroyLLConstraint();
 
 						Dy::Constraint			mLowLevelConstraint;

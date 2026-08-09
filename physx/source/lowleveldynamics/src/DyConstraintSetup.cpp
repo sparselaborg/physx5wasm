@@ -858,6 +858,115 @@ PxU32 SetupSolverConstraint(SolverConstraintShaderPrepDesc& shaderDesc,
 	return ConstraintHelper::setupSolverConstraint(prepDesc, allocator, dt, invdt, biasCoefficient);
 }
 
+// OK: Three body constraints
+PxU32 SetupSolverConstraint3(SolverConstraintShaderPrepDesc& shaderDesc, PxSolverConstraintPrepDesc& prepDesc, PxConstraintAllocator& allocator, PxSolverBody& body2, const PxSolverBodyData& data2, const PxTransform& bodyFrame2, PxReal dt, PxReal invdt, PxReal biasCoefficient)
+{
+	PX_ASSERT(!(reinterpret_cast<ConstraintWriteback*>(prepDesc.writeback)->broken));
+
+	setConstraintLength(*prepDesc.desc, 0);
+
+	if(!shaderDesc.solverPrep)
+	{
+		return 0;
+	}
+
+	Px1DConstraint rows[MAX_CONSTRAINT_ROWS];
+	setupConstraintRows(rows, MAX_CONSTRAINT_ROWS);
+
+	prepDesc.invMassScales.linear0 = prepDesc.invMassScales.linear1 = prepDesc.invMassScales.angular0 = prepDesc.invMassScales.angular1 = 1.0f;
+	prepDesc.body0WorldOffset = PxVec3(0.0f);
+
+	PxVec3p cA2w, cB2w;
+	prepDesc.numRows = prepDesc.disableConstraint ? 0 : (*shaderDesc.solverPrep)(rows, prepDesc.body0WorldOffset, MAX_CONSTRAINT_ROWS, prepDesc.invMassScales, shaderDesc.constantBlock, prepDesc.bodyFrame0, prepDesc.bodyFrame1, prepDesc.extendedLimits, cA2w, cB2w);
+
+	if(prepDesc.numRows == 0)
+	{
+		prepDesc.desc->constraint = NULL;
+		prepDesc.desc->writeBack = NULL;
+		prepDesc.desc->constraintLengthOver16 = 0;
+		return 0;
+	}
+
+	PxSolverConstraintDesc& desc = *prepDesc.desc;
+	PX_ASSERT(desc.linkIndexA == PxSolverConstraintDesc::RIGID_BODY);
+	PX_ASSERT(desc.linkIndexB == PxSolverConstraintDesc::RIGID_BODY);
+
+	const PxU32 constraintLength = sizeof(SolverConstraint1DHeader3) + sizeof(SolverConstraint1D3) * prepDesc.numRows;
+	PxU8* ptr = allocator.reserveConstraintData(constraintLength + 16u);
+	if(!checkConstraintDataPtr<true>(ptr))
+	{
+		return 0;
+	}
+
+	desc.constraint = ptr;
+	setConstraintLength(desc, constraintLength);
+	desc.writeBack = prepDesc.writeback;
+	PxMemZero(desc.constraint, constraintLength);
+
+	SolverConstraint1DHeader3* header = reinterpret_cast<SolverConstraint1DHeader3*>(desc.constraint);
+	PxU8* constraints = desc.constraint + sizeof(SolverConstraint1DHeader3);
+	init(*header, PxTo8(prepDesc.numRows), false, prepDesc.invMassScales);
+	header->type = DY_SC_TYPE_RB_1D_3;
+	header->body0WorldOffset = prepDesc.body0WorldOffset;
+	header->linBreakImpulse = prepDesc.linBreakForce * dt;
+	header->angBreakImpulse = prepDesc.angBreakForce * dt;
+	header->breakable = PxU8((prepDesc.linBreakForce != PX_MAX_F32) || (prepDesc.angBreakForce != PX_MAX_F32));
+	header->invMass0D0 = prepDesc.data0->invMass * prepDesc.invMassScales.linear0;
+	header->invMass1D1 = prepDesc.data1->invMass * prepDesc.invMassScales.linear1;
+	header->body2 = &body2;
+	header->invMass2D2 = data2.invMass;
+	header->angularInvMassScale2 = 1.0f;
+
+	PX_ALIGN(16, PxVec4) angSqrtInvInertia0[MAX_CONSTRAINT_ROWS];
+	PX_ALIGN(16, PxVec4) angSqrtInvInertia1[MAX_CONSTRAINT_ROWS];
+	Px1DConstraint* sorted[MAX_CONSTRAINT_ROWS];
+	preprocessRows(sorted, rows, angSqrtInvInertia0, angSqrtInvInertia1, prepDesc.numRows, prepDesc.data0->sqrtInvInertia, prepDesc.data1->sqrtInvInertia, prepDesc.data0->invMass, prepDesc.data1->invMass, prepDesc.invMassScales, true, prepDesc.improvedSlerp);
+
+	const PxVec3 rA = cA2w - prepDesc.bodyFrame0.p;
+	const PxVec3 rB = cB2w - prepDesc.bodyFrame1.p;
+	const PxVec3 rC0 = cA2w - bodyFrame2.p;
+	const PxVec3 rC1 = cB2w - bodyFrame2.p;
+	const PxReal erp = biasCoefficient;
+
+	for(PxU32 i = 0; i < prepDesc.numRows; ++i)
+	{
+		PxPrefetchLine(constraints, 128);
+		SolverConstraint1D3& s = *reinterpret_cast<SolverConstraint1D3*>(constraints);
+		const Px1DConstraint& c = *sorted[i];
+
+		PxReal minImpulse, maxImpulse;
+		computeMinMaxImpulseOrForceAsImpulse(c.minImpulse, c.maxImpulse, c.flags & Px1DConstraintFlag::eHAS_DRIVE_LIMIT, prepDesc.driveLimitsAreForces, dt, minImpulse, maxImpulse);
+
+		const PxVec3 directAngular0 = c.angular0 - rA.cross(c.linear0);
+		const PxVec3 directAngular1 = c.angular1 - rB.cross(c.linear1);
+		const PxVec3 linear2 = c.linear1 - c.linear0;
+		const PxVec3 angular2 = directAngular1 - directAngular0 - rC0.cross(c.linear0) + rC1.cross(c.linear1);
+		const PxVec3 ang2 = data2.sqrtInvInertia * angular2;
+
+		init(s, c.linear0, c.linear1, PxVec3(angSqrtInvInertia0[i].x, angSqrtInvInertia0[i].y, angSqrtInvInertia0[i].z), PxVec3(angSqrtInvInertia1[i].x, angSqrtInvInertia1[i].y, angSqrtInvInertia1[i].z), minImpulse, maxImpulse);
+		s.ang0Writeback = c.angular0;
+		s.lin2 = linear2;
+		s.ang2 = ang2;
+
+		const PxReal response0 = s.lin0.magnitudeSquared() * prepDesc.data0->invMass * prepDesc.invMassScales.linear0 + s.ang0.magnitudeSquared() * prepDesc.invMassScales.angular0;
+		const PxReal response1 = s.lin1.magnitudeSquared() * prepDesc.data1->invMass * prepDesc.invMassScales.linear1 + s.ang1.magnitudeSquared() * prepDesc.invMassScales.angular1;
+		const PxReal response2 = s.lin2.magnitudeSquared() * data2.invMass + s.ang2.magnitudeSquared();
+		const PxReal unitResponse = response0 + response1 + response2;
+		const PxReal initJointSpeed = prepDesc.data0->projectVelocity(c.linear0, c.angular0) - prepDesc.data1->projectVelocity(c.linear1, c.angular1) + data2.projectVelocity(linear2, angular2);
+		const PxReal recipUnitResponse = computeRecipUnitResponse(unitResponse, prepDesc.minResponseThreshold);
+		s.setSolverConstants(compute1dConstraintSolverConstantsPGS(c.flags, c.mods.spring.stiffness, c.mods.spring.damping, c.mods.bounce.restitution, c.mods.bounce.velocityThreshold, c.geometricError, c.velocityTarget, initJointSpeed, initJointSpeed, unitResponse, recipUnitResponse, erp, dt, invdt));
+
+		if(c.flags & Px1DConstraintFlag::eOUTPUT_FORCE)
+		{
+			s.flags |= DY_SC_FLAG_OUTPUT_FORCE;
+		}
+
+		constraints += sizeof(SolverConstraint1D3);
+	}
+
+	return prepDesc.numRows;
+}
+
 }
 
 }

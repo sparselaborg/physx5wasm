@@ -101,6 +101,8 @@ struct IslandContext
 	//The thread context for this island (set in in the island start task, released in the island end task)
 	ThreadContext*		mThreadContext;
 	PxsIslandIndices	mCounts;
+	// OK: Three body constraints
+	bool				mHasThreeBodyConstraints;
 };
 
 /**

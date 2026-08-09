@@ -66,6 +66,19 @@ struct SolverConstraint1DHeader
 
 PX_COMPILE_TIME_ASSERT(sizeof(SolverConstraint1DHeader) == 48);
 
+// OK: Three body constraints
+struct SolverConstraint1DHeader3 : public SolverConstraint1DHeader
+{
+	PxSolverBody*	body2;
+	PxReal			invMass2D2;
+	PxReal			angularInvMassScale2;
+#if !PX_P64_FAMILY
+	PxU32			pad;
+#endif
+};
+
+PX_COMPILE_TIME_ASSERT((sizeof(SolverConstraint1DHeader3) & 0x0f) == 0);
+
 PX_ALIGN_PREFIX(16)
 struct SolverConstraint1D 
 {
@@ -100,6 +113,17 @@ public:
 } PX_ALIGN_SUFFIX(16); 	
 
 PX_COMPILE_TIME_ASSERT(sizeof(SolverConstraint1D) == 96);
+
+// OK: Three body constraints
+struct SolverConstraint1D3 : public SolverConstraint1D
+{
+	PxVec3		lin2;
+	PxReal		pad0;
+	PxVec3		ang2;
+	PxReal		pad1;
+};
+
+PX_COMPILE_TIME_ASSERT((sizeof(SolverConstraint1D3) & 0x0f) == 0);
 
 
 struct SolverConstraint1DExt : public SolverConstraint1D

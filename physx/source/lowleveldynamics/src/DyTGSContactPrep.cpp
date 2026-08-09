@@ -2210,6 +2210,141 @@ PxU32 SetupSolverConstraintStep(SolverConstraintShaderPrepDesc& shaderDesc,
 	return result;
 }
 
+// OK: Three body constraints
+PxU32 SetupSolverConstraintStep3(SolverConstraintShaderPrepDesc& shaderDesc, PxTGSSolverConstraintPrepDesc& prepDesc, PxConstraintAllocator& allocator, PxTGSSolverBodyVel& body2, const PxTGSSolverBodyTxInertia& body2TxI, const PxTGSSolverBodyData& bodyData2, const PxTransform& bodyFrame2, PxU32 body2DataIndex, const PxReal stepDt, const PxReal simDt, const PxReal recipStepDt, const PxReal recipSimDt, const PxReal lengthScale, const PxReal biasCoefficient)
+{
+	PX_ASSERT(!(reinterpret_cast<ConstraintWriteback*>(prepDesc.writeback)->broken));
+
+	prepDesc.desc->constraintLengthOver16 = 0;
+
+	if(!shaderDesc.solverPrep)
+	{
+		return 0;
+	}
+
+	Px1DConstraint rows[MAX_CONSTRAINT_ROWS];
+	setupConstraintRows(rows, MAX_CONSTRAINT_ROWS);
+
+	prepDesc.invMassScales.linear0 = prepDesc.invMassScales.linear1 = prepDesc.invMassScales.angular0 = prepDesc.invMassScales.angular1 = 1.0f;
+	prepDesc.body0WorldOffset = PxVec3(0.0f);
+	prepDesc.numRows = prepDesc.disableConstraint ? 0 : (*shaderDesc.solverPrep)(rows, prepDesc.body0WorldOffset, MAX_CONSTRAINT_ROWS, prepDesc.invMassScales, shaderDesc.constantBlock, prepDesc.bodyFrame0, prepDesc.bodyFrame1, prepDesc.extendedLimits, prepDesc.cA2w, prepDesc.cB2w);
+
+	if(prepDesc.numRows == 0)
+	{
+		prepDesc.desc->constraint = NULL;
+		prepDesc.desc->writeBack = NULL;
+		prepDesc.desc->constraintLengthOver16 = 0;
+		return 0;
+	}
+
+	if(prepDesc.bodyState0 != PxSolverContactDesc::eARTICULATION && prepDesc.body0->isKinematic)
+	{
+		prepDesc.invMassScales.angular0 = 0.0f;
+	}
+	if(prepDesc.bodyState1 != PxSolverContactDesc::eARTICULATION && prepDesc.body1->isKinematic)
+	{
+		prepDesc.invMassScales.angular1 = 0.0f;
+	}
+
+	PxSolverConstraintDesc& desc = *prepDesc.desc;
+	PX_ASSERT(desc.linkIndexA == PxSolverConstraintDesc::RIGID_BODY);
+	PX_ASSERT(desc.linkIndexB == PxSolverConstraintDesc::RIGID_BODY);
+
+	const PxU32 constraintLength = sizeof(SolverConstraint1DHeaderStep3) + sizeof(SolverConstraint1DStep3) * prepDesc.numRows;
+	PxU8* ptr = allocator.reserveConstraintData(constraintLength + 16u);
+	if(!checkConstraintDataPtr<true>(ptr))
+	{
+		return 0;
+	}
+
+	desc.constraint = ptr;
+	PX_ASSERT((constraintLength & 0xf) == 0);
+	desc.constraintLengthOver16 = PxTo16(constraintLength / 16);
+	desc.writeBack = prepDesc.writeback;
+	desc.writeBackFriction = NULL;
+	PxMemZero(desc.constraint, constraintLength);
+
+	SolverConstraint1DHeaderStep3* header = reinterpret_cast<SolverConstraint1DHeaderStep3*>(desc.constraint);
+	PxU8* constraints = desc.constraint + sizeof(SolverConstraint1DHeaderStep3);
+	init(*header, PxTo8(prepDesc.numRows), false, prepDesc.invMassScales);
+	header->type = DY_SC_TYPE_RB_1D_3;
+	header->body0WorldOffset = prepDesc.body0WorldOffset;
+	header->linBreakImpulse = prepDesc.linBreakForce * simDt;
+	header->angBreakImpulse = prepDesc.angBreakForce * simDt;
+	header->breakable = PxU8((prepDesc.linBreakForce != PX_MAX_F32) || (prepDesc.angBreakForce != PX_MAX_F32));
+	header->invMass0D0 = prepDesc.bodyData0->invMass * prepDesc.invMassScales.linear0;
+	header->invMass1D1 = prepDesc.bodyData1->invMass * prepDesc.invMassScales.linear1;
+	header->rAWorld = prepDesc.cA2w - prepDesc.bodyFrame0.p;
+	header->rBWorld = prepDesc.cB2w - prepDesc.bodyFrame1.p;
+	header->body2 = &body2;
+	header->body2DataIndex = body2DataIndex;
+	header->invMass2D2 = bodyData2.invMass;
+	header->rC0World = PxVec4(prepDesc.cA2w - bodyFrame2.p, 0.0f);
+	header->rC1World = PxVec4(prepDesc.cB2w - bodyFrame2.p, 0.0f);
+
+	Px1DConstraint* sorted[MAX_CONSTRAINT_ROWS];
+	PX_ALIGN(16, PxVec4) angSqrtInvInertia0[MAX_CONSTRAINT_ROWS];
+	PX_ALIGN(16, PxVec4) angSqrtInvInertia1[MAX_CONSTRAINT_ROWS];
+	preprocessRows(sorted, rows, angSqrtInvInertia0, angSqrtInvInertia1, prepDesc.numRows, prepDesc.body0TxI->sqrtInvInertia, prepDesc.body1TxI->sqrtInvInertia, prepDesc.bodyData0->invMass, prepDesc.bodyData1->invMass, prepDesc.invMassScales, true, prepDesc.improvedSlerp);
+
+	const PxVec3 rA = prepDesc.cA2w - prepDesc.bodyFrame0.p;
+	const PxVec3 rB = prepDesc.cB2w - prepDesc.bodyFrame1.p;
+	const PxVec3 rC0(header->rC0World.x, header->rC0World.y, header->rC0World.z);
+	const PxVec3 rC1(header->rC1World.x, header->rC1World.y, header->rC1World.z);
+	const PxReal erp = biasCoefficient;
+	const bool isKinematic0 = prepDesc.body0->isKinematic;
+	const bool isKinematic1 = prepDesc.body1->isKinematic;
+
+	for(PxU32 i = 0; i < prepDesc.numRows; ++i)
+	{
+		PxPrefetchLine(constraints, 128);
+		SolverConstraint1DStep3& s = *reinterpret_cast<SolverConstraint1DStep3*>(constraints);
+		const Px1DConstraint& c = *sorted[i];
+
+		PxReal minImpulse, maxImpulse;
+		computeMinMaxImpulseOrForceAsImpulse(c.minImpulse, c.maxImpulse, c.flags & Px1DConstraintFlag::eHAS_DRIVE_LIMIT, prepDesc.driveLimitsAreForces, simDt, minImpulse, maxImpulse);
+
+		const PxVec3 directAngular0 = c.angular0 - rA.cross(c.linear0);
+		const PxVec3 directAngular1 = c.angular1 - rB.cross(c.linear1);
+		const PxVec3 linear2 = c.linear1 - c.linear0;
+		const PxVec3 directAngular2 = directAngular1 - directAngular0;
+		const PxVec3 angular2 = directAngular2 - rC0.cross(c.linear0) + rC1.cross(c.linear1);
+		const PxVec3 ang2 = body2TxI.sqrtInvInertia * angular2;
+
+		init(s, c.linear0, c.linear1, directAngular0, directAngular1, minImpulse, maxImpulse);
+		s.lin2 = linear2;
+		s.directAng2 = directAngular2;
+
+		const PxVec3 ang0(angSqrtInvInertia0[i].x, angSqrtInvInertia0[i].y, angSqrtInvInertia0[i].z);
+		const PxVec3 ang1(angSqrtInvInertia1[i].x, angSqrtInvInertia1[i].y, angSqrtInvInertia1[i].z);
+		const PxReal linearResponse = s.lin0.magnitudeSquared() * prepDesc.bodyData0->invMass * prepDesc.invMassScales.linear0
+			+ s.lin1.magnitudeSquared() * prepDesc.bodyData1->invMass * prepDesc.invMassScales.linear1
+			+ s.lin2.magnitudeSquared() * bodyData2.invMass;
+		const PxReal unitResponse = linearResponse + ang0.magnitudeSquared() * prepDesc.invMassScales.angular0
+			+ ang1.magnitudeSquared() * prepDesc.invMassScales.angular1 + ang2.magnitudeSquared();
+		const PxReal vel0 = prepDesc.bodyData0->projectVelocity(c.linear0, c.angular0);
+		const PxReal vel1 = prepDesc.bodyData1->projectVelocity(c.linear1, c.angular1);
+		PxReal jointSpeedForRestitutionBounce, initJointSpeed;
+		computeJointSpeedTGS(vel0, isKinematic0, vel1, isKinematic1, jointSpeedForRestitutionBounce, initJointSpeed);
+		const PxReal velocity2 = bodyData2.projectVelocity(linear2, angular2);
+		jointSpeedForRestitutionBounce += velocity2;
+		if(body2.isKinematic)
+		{
+			initJointSpeed -= velocity2;
+		}
+
+		const PxReal recipUnitResponse = computeRecipUnitResponse(unitResponse, prepDesc.minResponseThreshold);
+		s.recipResponse = recipUnitResponse;
+		s.maxBias = computeMaxBiasVelocityTGS(c.flags, jointSpeedForRestitutionBounce, c.mods.bounce.velocityThreshold, c.mods.bounce.restitution, c.geometricError, false, lengthScale, recipSimDt);
+		s.setSolverConstants(compute1dConstraintSolverConstantsTGS(c.flags, c.mods.spring.stiffness, c.mods.spring.damping, c.mods.bounce.restitution, c.mods.bounce.velocityThreshold, c.geometricError, c.velocityTarget, jointSpeedForRestitutionBounce, initJointSpeed, unitResponse, recipUnitResponse, erp, stepDt, recipStepDt));
+		raiseInternalFlagsTGS(c.flags, c.solveHint, s.flags);
+
+		constraints += sizeof(SolverConstraint1DStep3);
+	}
+
+	return prepDesc.numRows;
+}
+
 void solveExt1D(const PxSolverConstraintDesc& desc, Vec3V& linVel0, Vec3V& linVel1, Vec3V& angVel0, Vec3V& angVel1,
 	const Vec3V& linMotion0, const Vec3V& linMotion1, const Vec3V& angMotion0, const Vec3V& angMotion1,
 	const QuatV& rotA, const QuatV& rotB, const PxReal elapsedTimeF32, Vec3V& linImpulse0, Vec3V& linImpulse1, Vec3V& angImpulse0,
@@ -2741,6 +2876,135 @@ void solve1DStep(const PxSolverConstraintDesc& desc, const PxTGSSolverBodyTxIner
 	PX_ASSERT(b1.angularVelocity.isFinite());
 }
 
+// OK: Three body constraints
+void solve1DStep3(const PxSolverConstraintDesc& desc, const PxTGSSolverBodyTxInertia* const txInertias, const PxReal elapsedTime)
+{
+	PxU8* PX_RESTRICT bPtr = desc.constraint;
+	if(bPtr == NULL)
+	{
+		return;
+	}
+
+	PxTGSSolverBodyVel& b0 = *desc.tgsBodyA;
+	PxTGSSolverBodyVel& b1 = *desc.tgsBodyB;
+	const SolverConstraint1DHeaderStep3* PX_RESTRICT header = reinterpret_cast<SolverConstraint1DHeaderStep3*>(bPtr);
+	PxTGSSolverBodyVel& b2 = *header->body2;
+	SolverConstraint1DStep3* PX_RESTRICT base = reinterpret_cast<SolverConstraint1DStep3*>(bPtr + sizeof(SolverConstraint1DHeaderStep3));
+
+	const PxTGSSolverBodyTxInertia& txI0 = txInertias[desc.bodyADataIndex];
+	const PxTGSSolverBodyTxInertia& txI1 = txInertias[desc.bodyBDataIndex];
+	const PxTGSSolverBodyTxInertia& txI2 = txInertias[header->body2DataIndex];
+	const Mat33V sqrtInvInertia0(V3LoadU_SafeReadW(txI0.sqrtInvInertia.column0), V3LoadU_SafeReadW(txI0.sqrtInvInertia.column1), V3LoadU(txI0.sqrtInvInertia.column2));
+	const Mat33V sqrtInvInertia1(V3LoadU_SafeReadW(txI1.sqrtInvInertia.column0), V3LoadU_SafeReadW(txI1.sqrtInvInertia.column1), V3LoadU(txI1.sqrtInvInertia.column2));
+	const Mat33V sqrtInvInertia2(V3LoadU_SafeReadW(txI2.sqrtInvInertia.column0), V3LoadU_SafeReadW(txI2.sqrtInvInertia.column1), V3LoadU(txI2.sqrtInvInertia.column2));
+
+	Vec3V linVel0 = V3LoadA(b0.linearVelocity);
+	Vec3V linVel1 = V3LoadA(b1.linearVelocity);
+	Vec3V linVel2 = V3LoadA(b2.linearVelocity);
+	Vec3V angState0 = V3LoadA(b0.angularVelocity);
+	Vec3V angState1 = V3LoadA(b1.angularVelocity);
+	Vec3V angState2 = V3LoadA(b2.angularVelocity);
+	const Vec3V linMotion0 = V3LoadA(b0.deltaLinDt);
+	const Vec3V linMotion1 = V3LoadA(b1.deltaLinDt);
+	const Vec3V linMotion2 = V3LoadA(b2.deltaLinDt);
+	const Vec3V angMotion0 = V3LoadA(b0.deltaAngDt);
+	const Vec3V angMotion1 = V3LoadA(b1.deltaAngDt);
+	const Vec3V angMotion2 = V3LoadA(b2.deltaAngDt);
+
+	const Vec3V rAPrev = V3LoadA(header->rAWorld);
+	const Vec3V rBPrev = V3LoadA(header->rBWorld);
+	const Vec3V rC0Prev = Vec3V_From_Vec4V(V4LoadA(&header->rC0World.x));
+	const Vec3V rC1Prev = Vec3V_From_Vec4V(V4LoadA(&header->rC1World.x));
+	const Vec3V rA = QuatRotate(aos::QuatVLoadA(&txI0.deltaBody2WorldQ.x), rAPrev);
+	const Vec3V rB = QuatRotate(aos::QuatVLoadA(&txI1.deltaBody2WorldQ.x), rBPrev);
+	const QuatV deltaRot2 = aos::QuatVLoadA(&txI2.deltaBody2WorldQ.x);
+	const Vec3V rC0 = QuatRotate(deltaRot2, rC0Prev);
+	const Vec3V rC1 = QuatRotate(deltaRot2, rC1Prev);
+	const Vec3V rAMotion = V3Sub(V3Add(rA, linMotion0), rAPrev);
+	const Vec3V rBMotion = V3Sub(V3Add(rB, linMotion1), rBPrev);
+	const Vec3V rC0Motion = V3Sub(V3Add(rC0, linMotion2), rC0Prev);
+	const Vec3V rC1Motion = V3Sub(V3Add(rC1, linMotion2), rC1Prev);
+
+	const FloatV invMass0 = FLoad(header->invMass0D0);
+	const FloatV invMass1 = FLoad(header->invMass1D1);
+	const FloatV invMass2 = FLoad(header->invMass2D2);
+	const FloatV invInertiaScale0 = FLoad(header->angularInvMassScale0);
+	const FloatV invInertiaScale1 = FLoad(header->angularInvMassScale1);
+	const FloatV elapsed = FLoad(elapsedTime);
+	const VecU32V springFlagMask = U4Load(DY_SC_FLAG_SPRING);
+
+	for(PxU32 i = 0; i < header->count; ++i, ++base)
+	{
+		PxPrefetchLine(base + 1);
+		SolverConstraint1DStep3& c = *base;
+		const Vec3V lin0 = V3LoadA(c.lin0);
+		const Vec3V lin1 = V3LoadA(c.lin1);
+		const Vec3V lin2 = V3LoadA(c.lin2);
+		const Vec3V directAng0 = V3LoadA(c.ang0);
+		const Vec3V directAng1 = V3LoadA(c.ang1);
+		const Vec3V directAng2 = V3LoadA(c.directAng2);
+		const Vec3V angular0 = V3Add(directAng0, V3Cross(rA, lin0));
+		const Vec3V angular1 = V3Add(directAng1, V3Cross(rB, lin1));
+		const Vec3V angular2 = V3Add(V3Sub(directAng2, V3Cross(rC0, lin0)), V3Cross(rC1, lin1));
+		const Vec3V directAng0I = M33MulV3(sqrtInvInertia0, directAng0);
+		const Vec3V directAng1I = M33MulV3(sqrtInvInertia1, directAng1);
+		const Vec3V directAng2I = M33MulV3(sqrtInvInertia2, directAng2);
+		const Vec3V ang0 = M33MulV3(sqrtInvInertia0, angular0);
+		const Vec3V ang1 = M33MulV3(sqrtInvInertia1, angular1);
+		const Vec3V ang2 = M33MulV3(sqrtInvInertia2, angular2);
+
+		const FloatV angularErrorScale = FLoad(c.angularErrorScale);
+		const FloatV targetVel = FLoad(c.velTarget);
+		const BoolV isSpringConstraint = V4IsEqU32(V4U32and(U4Load(c.flags), springFlagMask), springFlagMask);
+		FloatV errorChange = computeResolvedGeometricErrorTGS(rAMotion, rBMotion, lin0, lin1, angMotion0, angMotion1, directAng0I, directAng1I, angularErrorScale, isSpringConstraint, targetVel, elapsed);
+		const FloatV body2LinearMotion = FAdd(FNeg(V3Dot(lin0, rC0Motion)), V3Dot(lin1, rC1Motion));
+		const FloatV body2AngularMotion = FMul(angularErrorScale, V3Dot(directAng2I, angMotion2));
+		errorChange = FAdd(errorChange, FAdd(body2LinearMotion, body2AngularMotion));
+
+		const FloatV response0 = FScaleAdd(invMass0, V3Dot(lin0, lin0), V3SumElems(V3Mul(V3Scale(ang0, invInertiaScale0), ang0)));
+		const FloatV response1 = FSub(FMul(invMass1, V3Dot(lin1, lin1)), V3SumElems(V3Mul(V3Scale(ang1, invInertiaScale1), ang1)));
+		const FloatV response2 = FScaleAdd(invMass2, V3Dot(lin2, lin2), V3Dot(ang2, ang2));
+		const FloatV response = FAdd(FAdd(response0, response1), response2);
+		const FloatV recipResponse = FSel(FIsGrtr(response, FZero()), FRecip(response), FZero());
+		const FloatV velMultiplier = FLoad(c.velMultiplier);
+		const FloatV vMul = FSel(isSpringConstraint, velMultiplier, FMul(recipResponse, velMultiplier));
+		const FloatV maxBias = FLoad(c.maxBias);
+		const FloatV bias = FClamp(FScaleAdd(errorChange, FLoad(c.biasScale), FLoad(c.error)), computeMinBiasTGS(c.flags, maxBias), maxBias);
+		const FloatV constant = FSel(isSpringConstraint, FAdd(bias, targetVel), FMul(recipResponse, FAdd(bias, targetVel)));
+
+		const Vec3V v0 = V3MulAdd(linVel0, lin0, V3Mul(angState0, ang0));
+		const Vec3V v1 = V3MulAdd(linVel1, lin1, V3Mul(angState1, ang1));
+		const Vec3V v2 = V3MulAdd(linVel2, lin2, V3Mul(angState2, ang2));
+		const FloatV normalVel = V3SumElems(V3Add(V3Sub(v0, v1), v2));
+		const FloatV appliedForce = FLoad(c.appliedForce);
+		const FloatV unclampedForce = FAdd(appliedForce, FScaleAdd(vMul, normalVel, constant));
+		const FloatV clampedForce = FClamp(unclampedForce, FLoad(c.minImpulse), FLoad(c.maxImpulse));
+		const FloatV deltaF = FSub(clampedForce, appliedForce);
+		FStore(clampedForce, &c.appliedForce);
+
+		linVel0 = V3ScaleAdd(lin0, FMul(deltaF, invMass0), linVel0);
+		linVel1 = V3NegScaleSub(lin1, FMul(deltaF, invMass1), linVel1);
+		linVel2 = V3ScaleAdd(lin2, FMul(deltaF, invMass2), linVel2);
+		angState0 = V3ScaleAdd(ang0, FMul(deltaF, invInertiaScale0), angState0);
+		angState1 = V3ScaleAdd(ang1, FMul(deltaF, invInertiaScale1), angState1);
+		angState2 = V3ScaleAdd(ang2, deltaF, angState2);
+	}
+
+	V3StoreA(linVel0, b0.linearVelocity);
+	V3StoreA(linVel1, b1.linearVelocity);
+	V3StoreA(linVel2, b2.linearVelocity);
+	V3StoreA(angState0, b0.angularVelocity);
+	V3StoreA(angState1, b1.angularVelocity);
+	V3StoreA(angState2, b2.angularVelocity);
+
+	PX_ASSERT(b0.linearVelocity.isFinite());
+	PX_ASSERT(b0.angularVelocity.isFinite());
+	PX_ASSERT(b1.linearVelocity.isFinite());
+	PX_ASSERT(b1.angularVelocity.isFinite());
+	PX_ASSERT(b2.linearVelocity.isFinite());
+	PX_ASSERT(b2.angularVelocity.isFinite());
+}
+
 //Port of scalar implementation to SIMD maths with some interleaving of instructions
 void conclude1DStep(const PxSolverConstraintDesc& desc)
 {
@@ -2768,6 +3032,35 @@ void conclude1DStep(const PxSolverConstraintDesc& desc)
 			// Continuing to do so during velocity iterations would mean integrating further in time than
 			// the simulation step. To avoid this, the parameters are set to create zero impulse during
 			// velocity iterations.
+			c.velMultiplier = 0.0f;
+			c.biasScale = 0.0f;
+			c.error = 0.0f;
+			c.velTarget = 0.0f;
+		}
+	}
+}
+
+// OK: Three body constraints
+void conclude1DStep3(const PxSolverConstraintDesc& desc)
+{
+	PxU8* PX_RESTRICT bPtr = desc.constraint;
+	if(bPtr == NULL)
+	{
+		return;
+	}
+
+	const SolverConstraint1DHeaderStep3* PX_RESTRICT header = reinterpret_cast<SolverConstraint1DHeaderStep3*>(bPtr);
+	SolverConstraint1DStep3* PX_RESTRICT base = reinterpret_cast<SolverConstraint1DStep3*>(bPtr + sizeof(SolverConstraint1DHeaderStep3));
+	for(PxU32 i = 0; i < header->count; ++i)
+	{
+		SolverConstraint1DStep3& c = base[i];
+		if(!(c.flags & DY_SC_FLAG_KEEP_BIAS))
+		{
+			c.biasScale = 0.0f;
+			c.error = 0.0f;
+		}
+		if(c.flags & DY_SC_FLAG_SPRING)
+		{
 			c.velMultiplier = 0.0f;
 			c.biasScale = 0.0f;
 			c.error = 0.0f;
@@ -2860,6 +3153,34 @@ void writeBack1DStep(const PxSolverConstraintDesc& desc)
 		//we discard degenerate rows in the articulation constraint prep code.
 		//PX_ASSERT(desc.constraint + (desc.constraintLengthOver16 * 16) == base);
 	}
+}
+
+// OK: Three body constraints
+void writeBack1DStep3(const PxSolverConstraintDesc& desc)
+{
+	ConstraintWriteback* writeback = reinterpret_cast<ConstraintWriteback*>(desc.writeBack);
+	if(!writeback)
+	{
+		return;
+	}
+
+	SolverConstraint1DHeaderStep3* header = reinterpret_cast<SolverConstraint1DHeaderStep3*>(desc.constraint);
+	const SolverConstraint1DStep3* base = reinterpret_cast<SolverConstraint1DStep3*>(desc.constraint + sizeof(SolverConstraint1DHeaderStep3));
+	PxVec3 lin(0.0f), ang(0.0f);
+	for(PxU32 i = 0; i < header->count; ++i)
+	{
+		const SolverConstraint1DStep3& c = base[i];
+		if(c.flags & DY_SC_FLAG_OUTPUT_FORCE)
+		{
+			lin += c.lin0 * c.appliedForce;
+			ang += (c.ang0 + c.lin0.cross(header->rAWorld)) * c.appliedForce;
+		}
+	}
+
+	ang -= header->body0WorldOffset.cross(lin);
+	writeback->linearImpulse = lin;
+	writeback->angularImpulse = ang;
+	writeback->broken = header->breakable ? PxU32(lin.magnitude() > header->linBreakImpulse || ang.magnitude() > header->angBreakImpulse) : 0;
 }
 
 static FloatV solveExtContactsStep(SolverContactPointStepExt* contacts, const PxU32 nbContactPoints, const Vec3VArg contactNormal,
@@ -3299,6 +3620,15 @@ void solve1DBlock(DY_TGS_SOLVE_METHOD_PARAMS)
 		solve1DStep(desc[i], txInertias, elapsedTime);
 }
 
+// OK: Three body constraints
+void solve1D3Block(DY_TGS_SOLVE_METHOD_PARAMS)
+{
+	PX_UNUSED(minPenetration);
+	PX_UNUSED(cache);
+	PX_ASSERT(hdr.stride == 1);
+	solve1DStep3(desc[hdr.startIndex], txInertias, elapsedTime);
+}
+
 void solveExtContactBlock(DY_TGS_SOLVE_METHOD_PARAMS)
 {
 	PX_UNUSED(txInertias);
@@ -3331,6 +3661,14 @@ void writeBack1D(DY_TGS_WRITEBACK_METHOD_PARAMS)
 		writeBack1DStep(desc[i]);
 }
 
+// OK: Three body constraints
+void writeBack1D3(DY_TGS_WRITEBACK_METHOD_PARAMS)
+{
+	PX_UNUSED(cache);
+	PX_ASSERT(hdr.stride == 1);
+	writeBack1DStep3(desc[hdr.startIndex]);
+}
+
 void solveConclude1DBlock(DY_TGS_CONCLUDE_METHOD_PARAMS)
 {
 	PX_UNUSED(cache);
@@ -3340,6 +3678,15 @@ void solveConclude1DBlock(DY_TGS_CONCLUDE_METHOD_PARAMS)
 		solve1DStep(desc[i], txInertias, elapsedTime);
 		conclude1DStep(desc[i]);
 	}
+}
+
+// OK: Three body constraints
+void solveConclude1D3Block(DY_TGS_CONCLUDE_METHOD_PARAMS)
+{
+	PX_UNUSED(cache);
+	PX_ASSERT(hdr.stride == 1);
+	solve1DStep3(desc[hdr.startIndex], txInertias, elapsedTime);
+	conclude1DStep3(desc[hdr.startIndex]);
 }
 
 void solveConclude1DBlockExt(DY_TGS_CONCLUDE_METHOD_PARAMS)

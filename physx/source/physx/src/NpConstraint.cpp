@@ -50,25 +50,41 @@ static PX_FORCE_INLINE PxConstraintFlags scGetFlags(const ConstraintCore& core)
 	return core.getFlags() & (~(PxConstraintFlag::eGPU_COMPATIBLE));
 }
 
-static NpScene* getSceneFromActors(const PxRigidActor* actor0, const PxRigidActor* actor1)
+// OK: Three body constraints
+static NpScene* getSceneFromActors(const PxRigidActor* actor0, const PxRigidActor* actor1, const PxRigidActor* actor2)
 {
 	NpScene* s0 = NULL;
 	NpScene* s1 = NULL;
+	NpScene* s2 = NULL;
 
 	if(actor0 && (!(actor0->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))))
+	{
 		s0 = static_cast<NpScene*>(actor0->getScene());
+	}
 	if(actor1 && (!(actor1->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))))
+	{
 		s1 = static_cast<NpScene*>(actor1->getScene());
+	}
+	if(actor2 && (!(actor2->getActorFlags().isSet(PxActorFlag::eDISABLE_SIMULATION))))
+	{
+		s2 = static_cast<NpScene*>(actor2->getScene());
+	}
 
 #if PX_CHECKED
-	if ((s0 && s1) && (s0 != s1))
+	if ((s0 && s1 && s0 != s1) || (s0 && s2 && s0 != s2) || (s1 && s2 && s1 != s2))
+	{
 		outputError<PxErrorCode::eINVALID_PARAMETER>(__LINE__, "Adding constraint to scene: Actors belong to different scenes, undefined behavior expected!");
+	}
 #endif
 
-	if ((!actor0 || s0) && (!actor1 || s1))
-		return s0 ? s0 : s1;
+	if ((!actor0 || s0) && (!actor1 || s1) && (!actor2 || s2))
+	{
+		return s0 ? s0 : (s1 ? s1 : s2);
+	}
 	else
+	{
 		return NULL;
+	}
 }
 
 void NpConstraint::setConstraintFunctions(PxConstraintConnector& n, const PxConstraintShaderTable& shaders)
@@ -97,9 +113,20 @@ void NpConstraint::setConstraintFunctions(PxConstraintConnector& n, const PxCons
 		}
 	}
 
+	// OK: Three body constraints
+	if(mActor2 && mActor2 != mActor0 && mActor2 != mActor1)
+	{
+		NpActor& npActor = NpActor::getFromPxActor(*mActor2);
+		if(npActor.findConnector(NpConnectorType::eConstraint, this) == 0xffffffff)
+		{
+			bNeedUpdate = true;
+			npActor.addConnector(NpConnectorType::eConstraint, this, "PxConstraint: Add to rigid actor 2: Constraint already added");
+		}
+	}
+
 	if(bNeedUpdate)
 	{
-		NpScene* newScene = ::getSceneFromActors(mActor0, mActor1);
+		NpScene* newScene = ::getSceneFromActors(mActor0, mActor1, mActor2);
 		NpScene* oldScene = getNpScene();
 
 		if (oldScene != newScene)
@@ -133,20 +160,37 @@ PxConstraintGPUIndex NpConstraint::getGPUIndex() const
 	}
 }
 
-void NpConstraint::addConnectors(PxRigidActor* actor0, PxRigidActor* actor1)
+// OK: Three body constraints
+void NpConstraint::addConnectors(PxRigidActor* actor0, PxRigidActor* actor1, PxRigidActor* actor2)
 {
 	if(actor0)
+	{
 		NpActor::getFromPxActor(*actor0).addConnector(NpConnectorType::eConstraint, this, "PxConstraint: Add to rigid actor 0: Constraint already added");
+	}
 	if(actor1)
+	{
 		NpActor::getFromPxActor(*actor1).addConnector(NpConnectorType::eConstraint, this, "PxConstraint: Add to rigid actor 1: Constraint already added");
+	}
+	if(actor2 && actor2 != actor0 && actor2 != actor1)
+	{
+		NpActor::getFromPxActor(*actor2).addConnector(NpConnectorType::eConstraint, this, "PxConstraint: Add to rigid actor 2: Constraint already added");
+	}
 }
 
-void NpConstraint::removeConnectors(const char* errorMsg0, const char* errorMsg1)
+void NpConstraint::removeConnectors(const char* errorMsg0, const char* errorMsg1, const char* errorMsg2)
 {
 	if(mActor0)
+	{
 		NpActor::getFromPxActor(*mActor0).removeConnector(*mActor0, NpConnectorType::eConstraint, this, errorMsg0);
+	}
 	if(mActor1)
+	{
 		NpActor::getFromPxActor(*mActor1).removeConnector(*mActor1, NpConnectorType::eConstraint, this, errorMsg1);
+	}
+	if(mActor2 && mActor2 != mActor0 && mActor2 != mActor1)
+	{
+		NpActor::getFromPxActor(*mActor2).removeConnector(*mActor2, NpConnectorType::eConstraint, this, errorMsg2);
+	}
 }
 
 NpConstraint::NpConstraint(PxRigidActor* actor0, PxRigidActor* actor1, PxConstraintConnector& connector, const PxConstraintShaderTable& shaders, PxU32 dataSize) :
@@ -154,13 +198,15 @@ NpConstraint::NpConstraint(PxRigidActor* actor0, PxRigidActor* actor1, PxConstra
 	NpBase		(NpType::eCONSTRAINT),
 	mActor0		(actor0),
 	mActor1		(actor1),
+	// OK: Three body constraints
+	mActor2		(connector.getThirdActor()),
 	mCore		(connector, shaders, dataSize)
 {
 	scSetFlags(shaders.flag);
 
-	addConnectors(actor0, actor1);
+	addConnectors(actor0, actor1, mActor2);
 
-	NpScene* s = ::getSceneFromActors(actor0, actor1);
+	NpScene* s = ::getSceneFromActors(actor0, actor1, mActor2);
 	if (s)
 	{
 		if(s->isAPIWriteForbidden())
@@ -192,7 +238,8 @@ void NpConstraint::release()
 
 	NpPhysics::getInstance().notifyDeletionListenersUserRelease(this, NULL);
 
-	removeConnectors(gRemoveConnectorMsg, gRemoveConnectorMsg);
+	// OK: Three body constraints
+	removeConnectors(gRemoveConnectorMsg, gRemoveConnectorMsg, gRemoveConnectorMsg);
 
 	if(npScene)
 		npScene->removeFromConstraintList(*this);
@@ -205,6 +252,8 @@ void NpConstraint::resolveReferences(PxDeserializationContext& context)
 {
 	context.translatePxBase(mActor0);
 	context.translatePxBase(mActor1);
+	// OK: Three body constraints
+	context.translatePxBase(mActor2);
 }
 
 NpConstraint* NpConstraint::createObject(PxU8*& address, PxDeserializationContext& context)
@@ -229,11 +278,13 @@ void NpConstraint::getActors(PxRigidActor*& actor0, PxRigidActor*& actor1) const
 	actor1 = mActor1;
 }
 
-static PX_INLINE void scSetBodies(ConstraintCore& core, NpActor* r0, NpActor* r1)
+// OK: Three body constraints
+static PX_INLINE void scSetBodies(ConstraintCore& core, NpActor* r0, NpActor* r1, NpActor* r2)
 {
 	Sc::RigidCore* scR0 = r0 ? &r0->getScRigidCore() : NULL;
 	Sc::RigidCore* scR1 = r1 ? &r1->getScRigidCore() : NULL;
-	core.setBodies(scR0, scR1);
+	Sc::RigidCore* scR2 = r2 ? &r2->getScRigidCore() : NULL;
+	core.setBodies(scR0, scR1, scR2);
 }
 
 void NpConstraint::setActors(PxRigidActor* actor0, PxRigidActor* actor1)
@@ -247,15 +298,15 @@ void NpConstraint::setActors(PxRigidActor* actor0, PxRigidActor* actor1)
 	if(mActor0 == actor0 && mActor1 == actor1)
 		return;
 
-	removeConnectors(	"PxConstraint: Add to rigid actor 0: Constraint already added",
-						"PxConstraint: Add to rigid actor 1: Constraint already added");
+	// OK: Three body constraints
+	removeConnectors("PxConstraint: Add to rigid actor 0: Constraint already added", "PxConstraint: Add to rigid actor 1: Constraint already added", "PxConstraint: Add to rigid actor 2: Constraint already added");
 
-	addConnectors(actor0, actor1);
+	addConnectors(actor0, actor1, mActor2);
 
 	mActor0 = actor0;
 	mActor1 = actor1;
 
-	NpScene* newScene = ::getSceneFromActors(actor0, actor1);
+	NpScene* newScene = ::getSceneFromActors(actor0, actor1, mActor2);
 	NpScene* oldScene = getNpScene();
 
 	if(oldScene != newScene)
@@ -263,7 +314,8 @@ void NpConstraint::setActors(PxRigidActor* actor0, PxRigidActor* actor1)
 		if(oldScene)
 			oldScene->removeFromConstraintList(*this);
 
-		scSetBodies(mCore, NpActor::getNpActor(actor0), NpActor::getNpActor(actor1));
+		// OK: Three body constraints
+		scSetBodies(mCore, NpActor::getNpActor(actor0), NpActor::getNpActor(actor1), NpActor::getNpActor(mActor2));
 
 		if(newScene)
 			newScene->addToConstraintList(*this);
@@ -274,7 +326,8 @@ void NpConstraint::setActors(PxRigidActor* actor0, PxRigidActor* actor1)
 		// needed. This is especially important in the context of direct GPU API, to make
 		// sure the GPU index stays the same (users might have it cached).
 
-		scSetBodies(mCore, NpActor::getNpActor(actor0), NpActor::getNpActor(actor1));
+		// OK: Three body constraints
+		scSetBodies(mCore, NpActor::getNpActor(actor0), NpActor::getNpActor(actor1), NpActor::getNpActor(mActor2));
 	}
 
 	UPDATE_PVD_PROPERTY
@@ -417,7 +470,8 @@ void* NpConstraint::getExternalReference(PxU32& typeID)
 
 void NpConstraint::comShift(PxRigidActor* actor)
 {
-	PX_ASSERT(actor == mActor0 || actor == mActor1);
+	// OK: Three body constraints
+	PX_ASSERT(actor == mActor0 || actor == mActor1 || actor == mActor2);
 	PxConstraintConnector* connector = mCore.getPxConnector();
 	if(actor == mActor0)
 		connector->onComShift(0);
@@ -430,15 +484,24 @@ void NpConstraint::actorDeleted(PxRigidActor* actor)
 	// the actor cannot be deleted without also removing it from the scene,
 	// which means that the joint will also have been removed from the scene,
 	// so we can just reset the actor here.
-	PX_ASSERT(actor == mActor0 || actor == mActor1);
+	// OK: Three body constraints
+	PX_ASSERT(actor == mActor0 || actor == mActor1 || actor == mActor2);
 
 	if(actor == mActor0)
+	{
 		mActor0 = NULL;
-	else
+	}
+	if(actor == mActor1)
+	{
 		mActor1 = NULL;
+	}
+	if(actor == mActor2)
+	{
+		mActor2 = NULL;
+	}
 }
 
 NpScene* NpConstraint::getSceneFromActors() const
 {
-	return ::getSceneFromActors(mActor0, mActor1);
+	return ::getSceneFromActors(mActor0, mActor1, mActor2);
 }

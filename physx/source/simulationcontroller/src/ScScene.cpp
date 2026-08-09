@@ -1666,9 +1666,10 @@ void Sc::Scene::removeBody(BodySim& body)	//this also notifies any connected joi
 	markReleasedBodyIDForLostTouch(body.getActorID());
 }
 
-void Sc::Scene::addConstraint(ConstraintCore& constraint, RigidCore* body0, RigidCore* body1)
+// OK: Three body constraints
+void Sc::Scene::addConstraint(ConstraintCore& constraint, RigidCore* body0, RigidCore* body1, RigidCore* body2)
 {
-	ConstraintSim* sim = mConstraintSimPool.construct(constraint, body0, body1, *this);
+	ConstraintSim* sim = mConstraintSimPool.construct(constraint, body0, body1, body2, *this);
 
 	addConstraintToMap(constraint, body0, body1);
 
