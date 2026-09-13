@@ -48,7 +48,7 @@ using namespace Cm;
 	// Some float optimizations ported over from novodex.
 
 	//returns non zero if the value is negative.
-	#define PXC_IS_NEGATIVE(x) (((PxU32&)(x)) & 0x80000000)
+	#define PXC_IS_NEGATIVE(x) (PxUnionCast<PxU32>(x) & 0x80000000)
 
 #else
 

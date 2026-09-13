@@ -79,6 +79,13 @@ void solve1D3Block_WriteBack				(DY_PGS_SOLVE_METHOD_PARAMS);
 //void contactPreBlock_WriteBack	(DY_PGS_SOLVE_METHOD_PARAMS);
 //void writeBack1D4Block			(DY_PGS_SOLVE_METHOD_PARAMS);
 
+void solveContactBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+void solveContactConcludeBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+void solveContactBlockWriteBackAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+void solveContact_BStaticBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+void solveContact_BStaticConcludeBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+void solveContact_BStaticBlockWriteBackAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS);
+
 SolveBlockMethod gVTableSolveBlock[] PX_UNUSED_ATTRIBUTE = 
 {
 	0,
@@ -92,6 +99,9 @@ SolveBlockMethod gVTableSolveBlock[] PX_UNUSED_ATTRIBUTE =
 	solve1D4_Block,					// DY_SC_TYPE_BLOCK_1D,
 	// OK: Three body constraints
 	solve1D3Block,					// DY_SC_TYPE_RB_1D_3
+	0, 0, 0, 0, 0, // PGS does not use the separate Coulomb-friction slots
+	solveContactBlockAnisotropic,
+	solveContact_BStaticBlockAnisotropic,
 };
 
 SolveWriteBackBlockMethod gVTableSolveWriteBackBlock[] PX_UNUSED_ATTRIBUTE = 
@@ -107,6 +117,9 @@ SolveWriteBackBlockMethod gVTableSolveWriteBackBlock[] PX_UNUSED_ATTRIBUTE =
 	solve1D4Block_WriteBack,				// DY_SC_TYPE_BLOCK_1D,
 	// OK: Three body constraints
 	solve1D3Block_WriteBack,				// DY_SC_TYPE_RB_1D_3
+	0, 0, 0, 0, 0, // PGS does not use the separate Coulomb-friction slots
+	solveContactBlockWriteBackAnisotropic,
+	solveContact_BStaticBlockWriteBackAnisotropic,
 };
 
 SolveBlockMethod gVTableSolveConcludeBlock[] PX_UNUSED_ATTRIBUTE = 
@@ -122,7 +135,14 @@ SolveBlockMethod gVTableSolveConcludeBlock[] PX_UNUSED_ATTRIBUTE =
 	solve1D4Block_Conclude,					// DY_SC_TYPE_BLOCK_1D,
 	// OK: Three body constraints
 	solve1D3ConcludeBlock,					// DY_SC_TYPE_RB_1D_3
+	0, 0, 0, 0, 0, // PGS does not use the separate Coulomb-friction slots
+	solveContactConcludeBlockAnisotropic,
+	solveContact_BStaticConcludeBlockAnisotropic,
 };
+
+PX_COMPILE_TIME_ASSERT(sizeof(gVTableSolveBlock) / sizeof(gVTableSolveBlock[0]) == DY_SC_CONSTRAINT_TYPE_COUNT);
+PX_COMPILE_TIME_ASSERT(sizeof(gVTableSolveWriteBackBlock) / sizeof(gVTableSolveWriteBackBlock[0]) == DY_SC_CONSTRAINT_TYPE_COUNT);
+PX_COMPILE_TIME_ASSERT(sizeof(gVTableSolveConcludeBlock) / sizeof(gVTableSolveConcludeBlock[0]) == DY_SC_CONSTRAINT_TYPE_COUNT);
 
 struct SolverDt
 {

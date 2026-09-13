@@ -300,6 +300,7 @@ void conclude1D3(const PxSolverConstraintDesc& desc)
 
 // ==============================================================
 
+template<bool supportAnisotropy = false>
 static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cache)
 {
 	PxSolverBody& b0 = *desc.bodyA;
@@ -348,9 +349,9 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 		{
 			const FloatV staticFrictionCof = hdr->getStaticFriction();
 			const FloatV dynamicFrictionCof = hdr->getDynamicFriction();
-			const FloatV maxFrictionImpulse = FMul(staticFrictionCof, accumulatedNormalImpulse);
-			const FloatV maxDynFrictionImpulse = FMul(dynamicFrictionCof, accumulatedNormalImpulse);
-			const FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
+			FloatV maxFrictionImpulse = FMul(staticFrictionCof, accumulatedNormalImpulse);
+			FloatV maxDynFrictionImpulse = FMul(dynamicFrictionCof, accumulatedNormalImpulse);
+			FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
 
 			BoolV broken = BFFFF();
 
@@ -374,6 +375,14 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
 				
+				if(supportAnisotropy)
+				{
+					// Every row in this solver stream has coefficients, including
+					// ordinary patches whose material direction has no tangent.
+					maxFrictionImpulse = FMul(FLoad(f.staticFriction), accumulatedNormalImpulse);
+					maxDynFrictionImpulse = FMul(FLoad(f.dynamicFriction), accumulatedNormalImpulse);
+					negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
+				}
 				const FloatV targetVel = FLoad(f.targetVel);
 
 				const Vec3V delLinVel0 = V3Scale(normal, invMassA);
@@ -443,6 +452,7 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 	PX_ASSERT(currPtr == last);
 }
 
+template<bool supportAnisotropy = false>
 static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverContext& cache)
 {
 	PxSolverBody& b0 = *desc.bodyA;
@@ -484,8 +494,8 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 
 		if(cache.doFriction && numFrictionConstr)
 		{
-			const FloatV maxFrictionImpulse = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
-			const FloatV maxDynFrictionImpulse = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
+			FloatV maxFrictionImpulse = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
+			FloatV maxDynFrictionImpulse = FMul(hdr->getDynamicFriction(), accumulatedNormalImpulse);
 
 			BoolV broken = BFFFF();
 			if(cache.writeBackIteration)
@@ -507,6 +517,11 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 				const FloatV bias = V4GetW(rbXnXYZ_biasW);
 				const FloatV velMultiplier = V4GetW(raXnXYZ_velMultiplierW);
 
+				if(supportAnisotropy)
+				{
+					maxFrictionImpulse = FMul(FLoad(f.staticFriction), accumulatedNormalImpulse);
+					maxDynFrictionImpulse = FMul(FLoad(f.dynamicFriction), accumulatedNormalImpulse);
+				}
 				const FloatV targetVel = FLoad(f.targetVel);
 	
 				const FloatV negMaxDynFrictionImpulse = FNeg(maxDynFrictionImpulse);
@@ -666,7 +681,8 @@ void writeBackContact(const PxSolverConstraintDesc& desc, SolverContext& cache,
 		SolverContactFriction* PX_RESTRICT frictions = reinterpret_cast<SolverContactFriction*>(cPtr);
 		cPtr += numFrictionConstr * frictionStride;
 
-		writeBackContactFriction(frictions, numFrictionConstr, frictionStride, vFrictionWriteback);
+		if(vFrictionWriteback && !(hdr->flags & SolverContactHeader::eAREA_FRICTION))
+			writeBackContactFriction(frictions, numFrictionConstr, frictionStride, vFrictionWriteback);
 	}
 	PX_ASSERT(cPtr == last);
 
@@ -845,6 +861,18 @@ void solveContactBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 	solveContact(desc[constraintCount-1], cache);
 }
 
+void solveContactBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		solveContact<true>(desc[a-1], cache);
+	}
+	solveContact<true>(desc[constraintCount-1], cache);
+}
+
 void solveContactConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 {
 	for(PxU32 a = 1; a < constraintCount; ++a)
@@ -856,6 +884,20 @@ void solveContactConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 		concludeContact(desc[a-1]);
 	}
 	solveContact(desc[constraintCount-1], cache);
+	concludeContact(desc[constraintCount-1]);
+}
+
+void solveContactConcludeBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		solveContact<true>(desc[a-1], cache);
+		concludeContact(desc[a-1]);
+	}
+	solveContact<true>(desc[constraintCount-1], cache);
 	concludeContact(desc[constraintCount-1]);
 }
 
@@ -888,6 +930,35 @@ void solveContactBlockWriteBack(DY_PGS_SOLVE_METHOD_PARAMS)
 	}
 }
 
+void solveContactBlockWriteBackAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		PxSolverBodyData& bd0 = cache.solverBodyArray[desc[a-1].bodyADataIndex];
+		PxSolverBodyData& bd1 = cache.solverBodyArray[desc[a-1].bodyBDataIndex];
+		solveContact<true>(desc[a-1], cache);
+		writeBackContact(desc[a-1], cache, bd0, bd1);
+	}
+	PxSolverBodyData& bd0 = cache.solverBodyArray[desc[constraintCount-1].bodyADataIndex];
+	PxSolverBodyData& bd1 = cache.solverBodyArray[desc[constraintCount-1].bodyBDataIndex];
+	solveContact<true>(desc[constraintCount-1], cache);
+	writeBackContact(desc[constraintCount-1], cache, bd0, bd1);
+
+	if(cache.mThresholdStreamIndex > (cache.mThresholdStreamLength - 4))
+	{
+		//Write back to global buffer
+		PxI32 threshIndex = physx::PxAtomicAdd(cache.mSharedOutThresholdPairs, PxI32(cache.mThresholdStreamIndex)) - PxI32(cache.mThresholdStreamIndex);
+		for(PxU32 a = 0; a < cache.mThresholdStreamIndex; ++a)
+		{
+			cache.mSharedThresholdStream[a + threshIndex] = cache.mThresholdStream[a];
+		}
+		cache.mThresholdStreamIndex = 0;
+	}
+}
+
 void solveContact_BStaticBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 {
 	for(PxU32 a = 1; a < constraintCount; ++a)
@@ -898,6 +969,18 @@ void solveContact_BStaticBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 		solveContact_BStatic(desc[a-1], cache);
 	}
 	solveContact_BStatic(desc[constraintCount-1], cache);
+}
+
+void solveContact_BStaticBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		solveContact_BStatic<true>(desc[a-1], cache);
+	}
+	solveContact_BStatic<true>(desc[constraintCount-1], cache);
 }
 
 void solveContact_BStaticConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)
@@ -911,6 +994,20 @@ void solveContact_BStaticConcludeBlock(DY_PGS_SOLVE_METHOD_PARAMS)
 		concludeContact(desc[a-1]);
 	}
 	solveContact_BStatic(desc[constraintCount-1], cache);
+	concludeContact(desc[constraintCount-1]);
+}
+
+void solveContact_BStaticConcludeBlockAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		solveContact_BStatic<true>(desc[a-1], cache);
+		concludeContact(desc[a-1]);
+	}
+	solveContact_BStatic<true>(desc[constraintCount-1], cache);
 	concludeContact(desc[constraintCount-1]);
 }
 
@@ -929,6 +1026,36 @@ void solveContact_BStaticBlockWriteBack(DY_PGS_SOLVE_METHOD_PARAMS)
 	PxSolverBodyData& bd0 = cache.solverBodyArray[desc[constraintCount-1].bodyADataIndex];
 	PxSolverBodyData& bd1 = cache.solverBodyArray[desc[constraintCount-1].bodyBDataIndex];
 	solveContact_BStatic(desc[constraintCount-1], cache);
+	writeBackContact(desc[constraintCount-1], cache, bd0, bd1);
+
+	if(cache.mThresholdStreamIndex > (cache.mThresholdStreamLength - 4))
+	{
+		//Not enough space to write 4 more thresholds back!
+		//Write back to global buffer
+		PxI32 threshIndex = physx::PxAtomicAdd(cache.mSharedOutThresholdPairs, PxI32(cache.mThresholdStreamIndex)) - PxI32(cache.mThresholdStreamIndex);
+		for(PxU32 a = 0; a < cache.mThresholdStreamIndex; ++a)
+		{
+			cache.mSharedThresholdStream[a + threshIndex] = cache.mThresholdStream[a];
+		}
+		cache.mThresholdStreamIndex = 0;
+	}
+}
+
+void solveContact_BStaticBlockWriteBackAnisotropic(DY_PGS_SOLVE_METHOD_PARAMS)
+{
+	for(PxU32 a = 1; a < constraintCount; ++a)
+	{
+		PxPrefetchLine(desc[a].constraint);
+		PxPrefetchLine(desc[a].constraint, 128);
+		PxPrefetchLine(desc[a].constraint, 256);
+		PxSolverBodyData& bd0 = cache.solverBodyArray[desc[a-1].bodyADataIndex];
+		PxSolverBodyData& bd1 = cache.solverBodyArray[desc[a-1].bodyBDataIndex];
+		solveContact_BStatic<true>(desc[a-1], cache);
+		writeBackContact(desc[a-1], cache, bd0, bd1);
+	}
+	PxSolverBodyData& bd0 = cache.solverBodyArray[desc[constraintCount-1].bodyADataIndex];
+	PxSolverBodyData& bd1 = cache.solverBodyArray[desc[constraintCount-1].bodyBDataIndex];
+	solveContact_BStatic<true>(desc[constraintCount-1], cache);
 	writeBackContact(desc[constraintCount-1], cache, bd0, bd1);
 
 	if(cache.mThresholdStreamIndex > (cache.mThresholdStreamLength - 4))

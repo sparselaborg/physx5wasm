@@ -471,6 +471,8 @@ void Sc::ShapeInteraction::processUserNotificationAsync(PxU32 contactEvent, PxU1
 				contactPatchData =  output->contactPatches;
 				contactPointData = output->contactPoints;
 				cDataSize = sizeof(PxContactPatch)*output->nbPatches + sizeof(PxContact)*output->nbContacts;
+				if(reinterpret_cast<const PxContactPatch*>(output->contactPatches)->internalFlags & PxContactPatch::eHAS_ANISOTROPY)
+					cDataSize += (sizeof(PxModifiableContact) + sizeof(PxContactAnisotropy) - sizeof(PxContact)) * output->nbContacts;
 				alignedContactDataSize = (cDataSize + 0xf) & 0xfffffff0;
 				impulses = output->contactForces;
 			}
@@ -603,6 +605,8 @@ PxU32 Sc::ShapeInteraction::getContactPointData(const void*& contactPatches, con
 					contactPatches = output->contactPatches;
 					contactPoints = output->contactPoints;
 					contactDataSize = sizeof(PxContactPatch) * output->nbPatches + sizeof(PxContact) * output->nbContacts;
+					if(reinterpret_cast<const PxContactPatch*>(output->contactPatches)->internalFlags & PxContactPatch::eHAS_ANISOTROPY)
+						contactDataSize += (sizeof(PxModifiableContact) + sizeof(PxContactAnisotropy) - sizeof(PxContact)) * output->nbContacts;
 					contactPointCount = output->nbContacts;
 					numPatches = output->nbPatches;
 					impulses = output->contactForces;

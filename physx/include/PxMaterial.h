@@ -30,6 +30,7 @@
 #define PX_MATERIAL_H
 
 #include "PxBaseMaterial.h"
+#include "foundation/PxVec3.h"
 
 #if !PX_DOXYGEN
 namespace physx
@@ -141,6 +142,46 @@ struct PxCombineMode
 class PxMaterial : public PxBaseMaterial
 {
 public:
+	/**
+	\brief Set the primary friction direction in the local frame of each shape using this material.
+
+	A unit vector enables area-integrated anisotropic patch friction. Zero (the default)
+	selects ordinary friction. The direction follows the shape, including its local pose,
+	and is projected onto the contact plane. Its sign does not affect the friction law.
+	If the projection vanishes, ordinary friction is used for that patch.
+
+	The existing static/dynamic coefficients apply along this direction. The secondary
+	coefficients apply perpendicular to it in the contact plane. Each axis has independent
+	Coulomb bounds. Both axes use the existing friction combine mode; an ordinary material
+	contributes its existing coefficients on both axes. If both materials enable this
+	option, ordinary isotropic friction is used with their existing primary coefficients
+	and combine mode; secondary coefficients and friction directions are ignored.
+
+	CPU PGS rigid-body contacts with PxFrictionType::ePATCH only; not supported by
+	TGS, GPU dynamics or CCD impact friction. Contacts involving an articulation link
+	use ordinary isotropic friction with the primary coefficients. Each shape in an
+	anisotropic contact pair must have exactly one material assigned; the two shapes
+	can use different materials, such as an anisotropic conveyor material and an
+	isotropic case material. Multiple materials on a single shape are not supported.
+	Each patch must describe one convex, approximately planar contact
+	region. Friction integrates uniform pressure over the contact hull using the patch's
+	solved normal impulse and 16 samples per tangent (one for a single-point patch).
+	Normal contacts and compliance are unchanged. Reduced manifolds
+	can underestimate this hull. Friction-anchor persistence and reports are disabled for
+	these patches; normal contact reports remain available. No contact callback is required.
+	*/
+	virtual void setFrictionDirection(const PxVec3& direction) = 0;
+	virtual PxVec3 getFrictionDirection() const = 0;
+
+	/** \brief Secondary static coefficient, finite and nonnegative; default 0.
+	Ignored while the friction direction is zero. The combined static coefficient is
+	raised to the combined dynamic coefficient if necessary, as for primary friction. */
+	virtual void setStaticFrictionSecondary(PxReal coefficient) = 0;
+	virtual PxReal getStaticFrictionSecondary() const = 0;
+
+	/** \brief Secondary dynamic coefficient, finite and nonnegative; default 0. */
+	virtual void setDynamicFrictionSecondary(PxReal coefficient) = 0;
+	virtual PxReal getDynamicFrictionSecondary() const = 0;
 
 	/**
 	\brief Sets the coefficient of dynamic friction.

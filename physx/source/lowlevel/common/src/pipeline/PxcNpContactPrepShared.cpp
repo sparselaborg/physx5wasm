@@ -37,6 +37,9 @@
 #include "PxcNpThreadContext.h"
 #include "PxsMaterialManager.h"
 #include "PxsMaterialCombiner.h"
+#include "PxcNpWorkUnit.h"
+#include "PxsTransformCache.h"
+#include "PxsContactManagerState.h"
 
 #include "PxcNpContactPrepShared.h"
 
@@ -71,12 +74,38 @@ struct StridePatch
 	bool isRoot;
 };
 
-PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT contactPoints, const PxU32 numContactPoints, PxcNpThreadContext* threadContext,
+// Store material anisotropy in the existing expanded contact stream. This does not
+// set the work-unit contact-modification flag or schedule an application callback.
+static void combineAnisotropicMaterials(PxContactAnisotropy& result, const PxsMaterialManager& manager,
+	PxU16 index0, PxU16 index1, const PxsTransformCache& transforms, const PxcNpWorkUnit& workUnit)
+{
+	const PxsMaterialData& a = *manager.getMaterial(index0);
+	const PxsMaterialData& b = *manager.getMaterial(index1);
+	const bool enabled0 = (PxU16(a.flags) & PxsMaterialManager::eANISOTROPIC) != 0;
+	// Pair classification guarantees exactly one anisotropic material and friction enabled.
+	PX_ASSERT(enabled0 != ((PxU16(b.flags) & PxsMaterialManager::eANISOTROPIC) != 0));
+	PX_ASSERT(!((a.flags | b.flags) & PxMaterialFlag::eDISABLE_FRICTION));
+	const PxsMaterialData& directional = enabled0 ? a : b;
+	const PxTransform& pose = transforms.getTransformCache(enabled0 ? workUnit.mTransformCache0 : workUnit.mTransformCache1).transform;
+	result.frictionDirection = pose.rotate(directional.frictionDirection);
+	// Primary coefficients have already been combined by combineMaterials().
+	const PxReal as = enabled0 ? a.staticFrictionSecondary : a.staticFriction;
+	const PxReal ad = enabled0 ? a.dynamicFrictionSecondary : a.dynamicFriction;
+	const PxReal bs = enabled0 ? b.staticFriction : b.staticFrictionSecondary;
+	const PxReal bd = enabled0 ? b.dynamicFriction : b.dynamicFrictionSecondary;
+	const PxI32 mode = PxMax(a.getFrictionCombineMode(), b.getFrictionCombineMode());
+	result.dynamicFrictionSecondary = PxMax(0.f, combineScalars(ad, bd, mode));
+	result.staticFrictionSecondary = PxMax(result.dynamicFrictionSecondary, combineScalars(as, bs, mode));
+}
+
+template<bool pairHasAnisotropy>
+static PX_FORCE_INLINE PxU32 writeCompressedContactImpl(const PxContactPoint* const PX_RESTRICT contactPoints, const PxU32 numContactPoints, PxcNpThreadContext* threadContext,
 									PxU16& writtenContactCount, PxU8*& outContactPatches, PxU8*& outContactPoints, PxU16& compressedContactSize, PxReal*& outContactForces, PxU32 contactForceByteSize,
 									PxU8*& outFrictionPatches, PxcDataStreamPool* frictionPatchesStreamPool,
 									const PxsMaterialManager* materialManager, bool hasModifiableContacts, bool forceNoResponse, const PxsMaterialInfo* PX_RESTRICT pMaterial, PxU8& numPatches,
 									PxU32 additionalHeaderSize, PxsConstraintBlockManager* manager, PxcConstraintBlockStream* blockStream, bool insertAveragePoint,
-									PxcDataStreamPool* contactStreamPool, PxcDataStreamPool* patchStreamPool, PxcDataStreamPool* forceStreamPool, const bool isMeshType)
+									PxcDataStreamPool* contactStreamPool, PxcDataStreamPool* patchStreamPool, PxcDataStreamPool* forceStreamPool, const bool isMeshType,
+									const PxcNpWorkUnit* workUnit, PxU8* outputStatus)
 {
 	if(numContactPoints == 0)
 	{
@@ -176,9 +205,15 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 
 	//Calculate the number of patches/points required
 
-	const bool isModifiable = !forceNoResponse && hasModifiableContacts;
-	const PxU32 patchHeaderSize = sizeof(PxContactPatch) * (isModifiable ? totalContactPoints : totalUniquePatches) + additionalHeaderSize;
-	const PxU32 pointSize = totalContactPoints * (isModifiable ? sizeof(PxModifiableContact) : sizeof(PxContact));
+	// The caller has already classified the pair. GPU and CCD use the ordinary entry point.
+	const bool hasMaterialAnisotropy = pairHasAnisotropy && !forceNoResponse;
+	const bool mayModifyContacts = !forceNoResponse && hasModifiableContacts;
+	const bool isModifiable = mayModifyContacts || hasMaterialAnisotropy;
+	// Expanded anisotropic contacts alone cannot split patches. Only contact modification
+	// needs one header per contact (also required by PxContactSet::getPatch()).
+	const PxU32 patchHeaderSize = sizeof(PxContactPatch) * (mayModifyContacts ? totalContactPoints : totalUniquePatches) + additionalHeaderSize;
+	const PxU32 pointSize = totalContactPoints * ((isModifiable ? sizeof(PxModifiableContact) : sizeof(PxContact))
+		+ (hasMaterialAnisotropy ? sizeof(PxContactAnisotropy) : 0));
 
 	const PxU32 requiredContactSize = pointSize;
 	const PxU32 requiredPatchSize = patchHeaderSize;
@@ -319,6 +354,14 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 	PxU32 materialFlags;
 	combineMaterials(materialManager, origMatIndex0, origMatIndex1, staticFriction, dynamicFriction, combinedRestitution, materialFlags, combinedDamping);
 
+	// With one material per shape, coefficients and the world-space direction are
+	// shared by every patch. Preserve the full direction until solver preparation:
+	// a contact callback may replace the normal, invalidating an earlier projection.
+	PxContactAnisotropy pairAnisotropy;
+	if(hasMaterialAnisotropy)
+		combineAnisotropicMaterials(pairAnisotropy, *materialManager, origMatIndex0, origMatIndex1,
+			*threadContext->mTransformCache, *workUnit);
+
 	PxU8* PX_RESTRICT dataPlusOffset = patchData + additionalHeaderSize;
 	PxContactPatch* PX_RESTRICT patches = reinterpret_cast<PxContactPatch*>(dataPlusOffset);
 	PxU32* PX_RESTRICT faceIndice = triangleIndice;
@@ -350,7 +393,7 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 			//KS - we could probably compress this further into the header but the complexity might not be worth it
 			patch->nbContacts = rootPatch.totalCount;
 			patch->materialFlags = PxU8(materialFlags_);
-			patch->internalFlags = PxU8(flags);
+			patch->internalFlags = PxU16(flags);
 			patch->materialIndex0 = matIndex0;
 			patch->materialIndex1 = matIndex1;
 		}
@@ -359,12 +402,14 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 	if(isModifiable)
 	{
 		PxU32 flags = PxU32(isModifiable ? PxContactPatch::eMODIFIABLE : 0) |
+			(hasMaterialAnisotropy ? PxContactPatch::eHAS_ANISOTROPY : 0) |
 			(forceNoResponse ? PxContactPatch::eFORCE_NO_RESPONSE : 0) |
 			(isMeshType ? PxContactPatch::eHAS_FACE_INDICES : 0);
 
 		PxU32 currentIndex = 0;
 
 		PxModifiableContact* PX_RESTRICT point = reinterpret_cast<PxModifiableContact*>(contactData);
+		PxContactAnisotropy* extra = reinterpret_cast<PxContactAnisotropy*>(point + totalContactPoints);
 
 		for(PxU32 a = 0; a < numStrideHeaders; ++a)
 		{
@@ -385,6 +430,9 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 
 				PxContactPatch* PX_RESTRICT patch = patches++;
 				Local::fillPatch(patch, rootPatch, contactPoints[startIndex].normal, currentIndex, staticFriction, dynamicFriction, combinedRestitution, combinedDamping, materialFlags, flags, matIndex0, matIndex1);
+
+				if(hasMaterialAnisotropy)
+					PX_ASSERT(matIndex0 == pMaterial[0].mMaterialIndex0 && matIndex1 == pMaterial[0].mMaterialIndex1);
 
 				//const PxU32 endIndex = strideHeader[a];
 				const PxU32 totalCountThisPatch = rootPatch.totalCount;
@@ -425,6 +473,7 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 					point->materialFlags = materialFlags;
 					point->materialIndex0 = matIndex0;
 					point->materialIndex1 = matIndex1;
+					if(hasMaterialAnisotropy) extra[currentIndex] = pairAnisotropy;
 					point++;
 					currentIndex++;
 					PxPrefetchLine(point, 128);
@@ -447,6 +496,7 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 						point->materialFlags = materialFlags;
 						point->materialIndex0 = matIndex0;
 						point->materialIndex1 = matIndex1;
+						if(hasMaterialAnisotropy) extra[currentIndex] = pairAnisotropy;
 						if (faceIndice)
 						{
 							*faceIndice = contactPoints[b].internalFaceIndex1;
@@ -546,7 +596,31 @@ PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT cont
 		}
 	}
 
+	if(hasMaterialAnisotropy && outputStatus)
+		*outputStatus |= PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION;
 	writtenContactCount = PxTo16(totalContactPoints);
 
 	return totalRequiredSize;
+}
+
+PxU32 physx::writeCompressedContact(const PxContactPoint* const PX_RESTRICT contactPoints, const PxU32 numContactPoints, PxcNpThreadContext* threadContext,
+									PxU16& writtenContactCount, PxU8*& outContactPatches, PxU8*& outContactPoints, PxU16& compressedContactSize, PxReal*& outContactForces, PxU32 contactForceByteSize,
+									PxU8*& outFrictionPatches, PxcDataStreamPool* frictionPatchesStreamPool,
+									const PxsMaterialManager* materialManager, bool hasModifiableContacts, bool forceNoResponse, const PxsMaterialInfo* PX_RESTRICT pMaterial, PxU8& numPatches,
+									PxU32 additionalHeaderSize, PxsConstraintBlockManager* manager, PxcConstraintBlockStream* blockStream, bool insertAveragePoint,
+									PxcDataStreamPool* contactStreamPool, PxcDataStreamPool* patchStreamPool, PxcDataStreamPool* forceStreamPool, const bool isMeshType)
+{
+	return writeCompressedContactImpl<false>(contactPoints, numContactPoints, threadContext, writtenContactCount, outContactPatches, outContactPoints, compressedContactSize, outContactForces, contactForceByteSize, outFrictionPatches, frictionPatchesStreamPool, materialManager, hasModifiableContacts, forceNoResponse, pMaterial, numPatches, additionalHeaderSize, manager, blockStream, insertAveragePoint, contactStreamPool, patchStreamPool, forceStreamPool, isMeshType, NULL, NULL);
+}
+
+PxU32 physx::writeCompressedContactWithAnisotropy(const PxContactPoint* const PX_RESTRICT contactPoints, const PxU32 numContactPoints, PxcNpThreadContext* threadContext,
+									PxU16& writtenContactCount, PxU8*& outContactPatches, PxU8*& outContactPoints, PxU16& compressedContactSize, PxReal*& outContactForces, PxU32 contactForceByteSize,
+									PxU8*& outFrictionPatches, PxcDataStreamPool* frictionPatchesStreamPool,
+									const PxsMaterialManager* materialManager, bool hasModifiableContacts, bool forceNoResponse, const PxsMaterialInfo* PX_RESTRICT pMaterial, PxU8& numPatches,
+									PxU32 additionalHeaderSize, PxsConstraintBlockManager* manager, PxcConstraintBlockStream* blockStream, bool insertAveragePoint,
+									PxcDataStreamPool* contactStreamPool, PxcDataStreamPool* patchStreamPool, PxcDataStreamPool* forceStreamPool, const bool isMeshType,
+									const PxcNpWorkUnit* workUnit, PxU8* outputStatus)
+{
+	PX_ASSERT(workUnit && threadContext);
+	return writeCompressedContactImpl<true>(contactPoints, numContactPoints, threadContext, writtenContactCount, outContactPatches, outContactPoints, compressedContactSize, outContactForces, contactForceByteSize, outFrictionPatches, frictionPatchesStreamPool, materialManager, hasModifiableContacts, forceNoResponse, pMaterial, numPatches, additionalHeaderSize, manager, blockStream, insertAveragePoint, contactStreamPool, patchStreamPool, forceStreamPool, isMeshType, workUnit, outputStatus);
 }

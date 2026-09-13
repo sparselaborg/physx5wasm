@@ -113,6 +113,39 @@ void NpMaterial::setDynamicFriction(PxReal x)
 	OMNI_PVD_SET(OMNI_PVD_CONTEXT_HANDLE, PxMaterial, dynamicFriction, static_cast<PxMaterial &>(*this), x)
 }
 
+void NpMaterial::setFrictionDirection(const PxVec3& direction)
+{
+	PX_CHECK_AND_RETURN(direction.isFinite() && (direction.isZero() || direction.isNormalized()),
+		"PxMaterial::setFrictionDirection: expected zero or a finite unit vector");
+	if(mMaterial.frictionDirection == direction) return;
+	mMaterial.frictionDirection = direction;
+	updateMaterial();
+}
+
+PxVec3 NpMaterial::getFrictionDirection() const { return mMaterial.frictionDirection; }
+
+void NpMaterial::setStaticFrictionSecondary(PxReal coefficient)
+{
+	PX_CHECK_AND_RETURN(PxIsFinite(coefficient) && coefficient >= 0.f,
+		"PxMaterial::setStaticFrictionSecondary: expected a finite nonnegative coefficient");
+	if(mMaterial.staticFrictionSecondary == coefficient) return;
+	mMaterial.staticFrictionSecondary = coefficient;
+	updateMaterial();
+}
+
+PxReal NpMaterial::getStaticFrictionSecondary() const { return mMaterial.staticFrictionSecondary; }
+
+void NpMaterial::setDynamicFrictionSecondary(PxReal coefficient)
+{
+	PX_CHECK_AND_RETURN(PxIsFinite(coefficient) && coefficient >= 0.f,
+		"PxMaterial::setDynamicFrictionSecondary: expected a finite nonnegative coefficient");
+	if(mMaterial.dynamicFrictionSecondary == coefficient) return;
+	mMaterial.dynamicFrictionSecondary = coefficient;
+	updateMaterial();
+}
+
+PxReal NpMaterial::getDynamicFrictionSecondary() const { return mMaterial.dynamicFrictionSecondary; }
+
 PxReal NpMaterial::getDynamicFriction() const
 {
 	return mMaterial.dynamicFriction;

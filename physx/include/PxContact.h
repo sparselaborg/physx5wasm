@@ -35,6 +35,7 @@
 #include "PxConstraintDesc.h"
 #include "PxNodeIndex.h"
 #include "PxMaterial.h"
+#include "geomutils/PxContactPoint.h"
 
 #if !PX_DOXYGEN
 namespace physx
@@ -65,7 +66,8 @@ struct PxContactPatch
 		eHAS_TARGET_VELOCITY = 16,			//!< Indicates this contact stream has target velocities set
 		eHAS_MAX_IMPULSE = 32,				//!< Indicates this contact stream has max impulses set
 		eREGENERATE_PATCHES = 64,			//!< Indicates this contact stream needs patches re-generated. This is required if the application modified either the contact normal or the material properties
-		eCOMPRESSED_MODIFIED_CONTACT = 128
+		eCOMPRESSED_MODIFIED_CONTACT = 128,
+		eHAS_ANISOTROPY = 256 // Optional PxContactAnisotropy array follows all modifiable contacts
 	};
 
 	/**
@@ -212,6 +214,19 @@ PX_ALIGN_SUFFIX(16);
 */
 struct PxContactStreamIterator
 {
+	PX_FORCE_INLINE const PxContactAnisotropy* getAnisotropy() const
+	{
+		if(!(patch->internalFlags & PxContactPatch::eHAS_ANISOTROPY)) return NULL;
+		PX_ASSERT(nextContactIndex > 0);
+		// nextContactIndex is local to this patch; the trailing array covers the whole stream.
+		const PxU32 index = PxU32(patch->startContactIndex) + nextContactIndex - 1;
+		PX_ASSERT(index < totalContacts);
+		// Convert the current contact address to the corresponding entry in that array.
+		const size_t byteOffset = totalContacts * sizeof(PxModifiableContact)
+			- index * (sizeof(PxModifiableContact) - sizeof(PxContactAnisotropy));
+		return reinterpret_cast<const PxContactAnisotropy*>(reinterpret_cast<const PxU8*>(contact) + byteOffset);
+	}
+
 	enum StreamFormat
 	{
 		eSIMPLE_STREAM,

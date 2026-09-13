@@ -73,14 +73,45 @@ struct CorrelationBuffer
 
 	// contact IDs are only used to identify auxiliary contact data when velocity
 	// targets have been set. 
-	PxU16				contactID[MAX_FRICTION_PATCHES][2];
+	PxU16 contactID[MAX_FRICTION_PATCHES][2];
+
+	// Area patches do not use persistent anchor IDs. Reuse the first entry
+	// without a union, which would weaken alias analysis on the ordinary path.
+	PX_FORCE_INLINE PxU16 getAreaSampleCount(PxU32 patch) const
+	{
+		return contactID[patch][0];
+	}
+	PX_FORCE_INLINE void setAreaSampleCount(PxU32 patch, PxU32 count)
+	{
+		PX_ASSERT(count <= 32);
+		contactID[patch][0] = PxU16(count);
+	}
 
 	PxU32				contactPatchCount, frictionPatchCount;
 };
 
+// Preserve the ordering used when constructing this patch's normal constraints.
+PX_FORCE_INLINE PxU32 getFrictionContactIndices(const CorrelationBuffer& c, PxU32 frictionPatchIndex, PxU32* indices)
+{
+	PxU32 count = 0;
+	for(PxU32 patch = c.correlationListHeads[frictionPatchIndex]; patch != CorrelationBuffer::LIST_END; patch = c.contactPatches[patch].next)
+		for(PxU32 j = 0; j < c.contactPatches[patch].count; ++j)
+			indices[count++] = c.contactPatches[patch].start + j;
+	return count;
+}
+
+bool createContactPatchesAnisotropic(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance);
+bool correlatePatchesAnisotropic(CorrelationBuffer& fb,
+					  const PxContactPoint* cb,
+					  const PxTransform& bodyFrame0,
+					  const PxTransform& bodyFrame1,
+					  PxReal normalTolerance,
+					  PxU32 startContactPatchIndex,
+					  PxU32 startFrictionPatchIndex);
+
 bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance);
 
-bool correlatePatches(CorrelationBuffer& fb, 
+bool correlatePatches(CorrelationBuffer& fb,
 					  const PxContactPoint* cb,
 					  const PxTransform& bodyFrame0,
 					  const PxTransform& bodyFrame1,

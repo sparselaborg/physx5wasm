@@ -39,8 +39,8 @@
 #include "DyContactPrepShared.h"
 #include "DySleep.h"
 #include "DyIslandManager.h"
+#include "PxsMaterialManager.h"
 #if PGS_SUPPORT_COMPOUND_CONSTRAINTS
-	#include "PxsMaterialManager.h"
 	#include "DyContactReduction.h"
 	#include "DyThreadContext.h"
 #endif
@@ -780,6 +780,29 @@ public:
 		}
 	}
 
+#if !PGS_SUPPORT_COMPOUND_CONSTRAINTS
+	template<bool checkAnisotropy>
+	PX_FORCE_INLINE PxSolverConstraintDesc* setupContactDescs(const IG::IslandSim& islandSim,
+		PxSolverConstraintDesc* contactDescPtr, PxU32 nbCms)
+	{
+		for(PxU32 a = 0; a < nbCms; ++a)
+		{
+			PxSolverConstraintDesc& desc = *contactDescPtr++;
+			mContext.setDescFromIndices_Contacts(desc, islandSim, mObjects.contactManagers[a], mSolverBodyOffset);
+			desc.constraint = reinterpret_cast<PxU8*>(mObjects.contactManagers[a].contactManager);
+			desc.constraintType = DY_SC_TYPE_RB_CONTACT;
+			if(checkAnisotropy)
+			{
+				const PxsContactManagerOutput& output = mOutputs.getContactManagerOutput(
+					mObjects.contactManagers[a].contactManager->getWorkUnit().mNpIndex);
+				if(hasAreaFrictionMaterial(output))
+					desc.constraintType = DY_SC_TYPE_ANISOTROPIC_CONTACT;
+			}
+		}
+		return contactDescPtr;
+	}
+#endif
+
 	void setupDescTask()
 	{
 		PX_PROFILE_ZONE("SetupDescs", mContextID);
@@ -982,9 +1005,10 @@ public:
 				PxSolverConstraintDesc* startDesc = contactDescPtr;
 				mContext.setDescFromIndices_Contacts(*startDesc, islandSim, *constraints[0], mSolverBodyOffset);
 				startDesc->constraint = reinterpret_cast<PxU8*>(constraints[0]->contactManager);
-				startDesc->constraintType = DY_SC_TYPE_RB_CONTACT;
 
 				PxsContactManagerOutput* startManagerOutput = &mOutputs.getContactManagerOutput(constraints[0]->contactManager->getWorkUnit().mNpIndex);
+				startDesc->constraintType = hasAreaFrictionMaterial(*startManagerOutput)
+					? DY_SC_TYPE_ANISOTROPIC_CONTACT : DY_SC_TYPE_RB_CONTACT;
 				PxU32 contactCount = startManagerOutput->nbContacts;
 				PxU32 startIndex = 0;
 				PxU32 numHeaders = 0;
@@ -1000,7 +1024,9 @@ public:
 					PxsContactManagerOutput& output = mOutputs.getContactManagerOutput(manager->getWorkUnit().mNpIndex);
 
 					desc.constraint = reinterpret_cast<PxU8*>(constraints[a]->contactManager);
-					desc.constraintType = DY_SC_TYPE_RB_CONTACT;
+					const bool hasAnisotropicContacts = hasAreaFrictionMaterial(output);
+					desc.constraintType = hasAnisotropicContacts
+						? DY_SC_TYPE_ANISOTROPIC_CONTACT : DY_SC_TYPE_RB_CONTACT;
 
 					if (contactCount == 0)
 					{
@@ -1014,6 +1040,8 @@ public:
 						|| startDesc->linkIndexA != PxSolverConstraintDesc::RIGID_BODY || startDesc->linkIndexB != PxSolverConstraintDesc::RIGID_BODY
 						|| contactCount + output.nbContacts > PxContactBuffer::MAX_CONTACTS
 						|| manager->isChangeable()
+						// Preserve each anisotropic shape's material frame and contact hull.
+						|| hasAnisotropicContacts || startDesc->constraintType == DY_SC_TYPE_ANISOTROPIC_CONTACT
 						|| gDisableConstraintWelding
 						) //If this is the first thing and no contacts...then we skip
 					{
@@ -1103,14 +1131,10 @@ public:
 			// PT: TODO: refactor with TGS
 			PX_PROFILE_ZONE("setDescFromIndices_contacts", mContextID);
 
-			for (PxU32 a = 0; a < nbCms; ++a)
-			{
-				PxSolverConstraintDesc& desc = *contactDescPtr;
-				mContext.setDescFromIndices_Contacts(desc, islandSim, mObjects.contactManagers[a], mSolverBodyOffset);
-				desc.constraint = reinterpret_cast<PxU8*>(mObjects.contactManagers[a].contactManager);
-				desc.constraintType = DY_SC_TYPE_RB_CONTACT;
-				contactDescPtr++;
-			}
+			// Select once per task; ordinary-only scenes retain the original inner loop.
+			contactDescPtr = mMaterialManager->hasAnisotropy()
+				? setupContactDescs<true>(islandSim, contactDescPtr, nbCms)
+				: setupContactDescs<false>(islandSim, contactDescPtr, nbCms);
 		}
 		threadContext.contactDescArraySize = PxU32(contactDescPtr - mObjects.constraintDescs);
 #endif
@@ -2206,7 +2230,8 @@ static PxU32 createFinalizeContacts_Parallel(PxSolverBodyData* solverBodyData, T
 	{
 		PxConstraintBatchHeader& header = headers[a];
 
-		if(contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_CONTACT)
+		if(contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_RB_CONTACT ||
+			contactDescPtr[header.startIndex].constraintType == DY_SC_TYPE_ANISOTROPIC_CONTACT)
 		{
 			PxSolverContactDesc blockDescs[4];
 			PxsContactManagerOutput* cmOutputs[4];

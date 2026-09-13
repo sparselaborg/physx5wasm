@@ -31,6 +31,7 @@
 
 #include "PxMaterial.h"
 #include "foundation/PxUtilities.h"
+#include "foundation/PxVec3.h"
 #include "PxsMaterialShared.h"
 
 namespace physx
@@ -47,6 +48,10 @@ struct PxsMaterialData
 	PxU8			restCombineMode;	// PxCombineMode::Enum
 	PxU8			dampingCombineMode;	// PxCombineMode::Enum
 
+	PxReal staticFrictionSecondary;
+	PxReal dynamicFrictionSecondary;
+	PxVec3 frictionDirection;
+
 	PxsMaterialData() :
 		dynamicFriction	(0.0f),
 		staticFriction	(0.0f),
@@ -54,7 +59,10 @@ struct PxsMaterialData
 		damping			(0.0f),
 		fricCombineMode	(PxCombineMode::eAVERAGE),
 		restCombineMode	(PxCombineMode::eAVERAGE),
-		dampingCombineMode(PxCombineMode::eAVERAGE)
+		dampingCombineMode(PxCombineMode::eAVERAGE),
+		staticFrictionSecondary(0.0f),
+		dynamicFrictionSecondary(0.0f),
+		frictionDirection(0.0f)
 	{}
 
 	PxsMaterialData(const PxEMPTY) {}

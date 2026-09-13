@@ -44,6 +44,7 @@ namespace physx
 
 	void PxcDiscreteNarrowPhase(PxcNpThreadContext& context, const PxcNpWorkUnit& cmInput, Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID);
 	void PxcDiscreteNarrowPhasePCM(PxcNpThreadContext& context, const PxcNpWorkUnit& cmInput, Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID);
+	void PxcDiscreteNarrowPhasePCMWithAnisotropy(PxcNpThreadContext& context, const PxcNpWorkUnit& cmInput, Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID);
 }
 
 #endif

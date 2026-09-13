@@ -54,7 +54,8 @@ struct SolverContactHeader
 {
 	enum DySolverContactFlags
 	{
-		eHAS_FORCE_THRESHOLDS = 0x1
+		eHAS_FORCE_THRESHOLDS = 0x1,
+		eAREA_FRICTION = 0x2
 	};
 
 	PxU8	type;					//Note: mType should be first as the solver expects a type in the first byte.
@@ -149,13 +150,16 @@ PX_COMPILE_TIME_ASSERT(sizeof(SolverContactPointExt) == 112);
 */
 struct SolverContactFriction
 {
-	// PT: TODO: there's room for 3 floats in the padding bytes so we could just stick appliedForce / velMultiplier / bias there
-	// and avoid doing all the data packing / unpacking for these members...
+	// Keep the original 64-byte row; area coefficients use former padding.
 	Vec4V normalXYZ_appliedForceW;		//16
 	Vec4V raXnXYZ_velMultiplierW;		//32
 	Vec4V rbXnXYZ_biasW;				//48
 	PxReal targetVel;					//52
-	PxU32 mPad[3];						//64
+	// Used by anisotropic solver streams, including their ordinary patches.
+	// The ordinary solver does not read these former padding fields.
+	PxReal staticFriction;
+	PxReal dynamicFriction;
+	PxU32 mPad;			//64
 
 	PX_FORCE_INLINE void setAppliedForce(const FloatV f)	{ normalXYZ_appliedForceW = V4SetW(normalXYZ_appliedForceW,f);	}
 	PX_FORCE_INLINE void setBias(const FloatV f)			{ rbXnXYZ_biasW = V4SetW(rbXnXYZ_biasW,f);						}

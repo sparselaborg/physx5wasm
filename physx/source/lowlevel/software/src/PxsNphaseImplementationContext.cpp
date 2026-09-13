@@ -43,6 +43,7 @@
 #include "PxvGlobals.h"
 
 #include "PxcNpContactPrepShared.h"
+#include "PxsMaterialManager.h"
 
 using namespace physx;
 
@@ -507,7 +508,18 @@ public:
 		threadContext->mContactDistances = mContext->getContactDistances();
 
 		if(pcm)
-			processCms<PxcDiscreteNarrowPhasePCM>(threadContext);
+		{
+			// Select once per batch: scenes without anisotropic materials retain
+			// the existing inner loop, with no additional per-pair material reads.
+			if(threadContext->mMaterialManager->hasAnisotropy()
+#if PX_SUPPORT_GPU_PHYSX
+				&& !threadContext->mContactStreamPool
+#endif
+			)
+				processCms<PxcDiscreteNarrowPhasePCMWithAnisotropy>(threadContext);
+			else
+				processCms<PxcDiscreteNarrowPhasePCM>(threadContext);
+		}
 		else
 			processCms<PxcDiscreteNarrowPhase>(threadContext);
 

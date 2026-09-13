@@ -41,6 +41,22 @@ namespace physx
 {
 namespace Dy
 {
+static PX_FORCE_INLINE bool sameAreaFriction(const PxContactPoint& a, const PxContactPoint& b)
+{
+	if(((a.materialFlags ^ b.materialFlags) & PxContactPoint::eHAS_AREA_FRICTION) != 0)
+		return false;
+	if(!(a.materialFlags & PxContactPoint::eHAS_AREA_FRICTION))
+		return true;
+
+	// Area samples share one friction frame, coefficient pair and target velocity.
+	const PxContactAnisotropy& anisotropyA = *a.getAnisotropy();
+	const PxContactAnisotropy& anisotropyB = *b.getAnisotropy();
+	return anisotropyA.frictionDirection == anisotropyB.frictionDirection
+		&& anisotropyA.staticFrictionSecondary == anisotropyB.staticFrictionSecondary
+		&& anisotropyA.dynamicFrictionSecondary == anisotropyB.dynamicFrictionSecondary
+		&& a.targetVel == b.targetVel;
+}
+
 static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData& patch, PxU16 index, PxReal restitution, PxReal staticFriction, PxReal dynamicFriction,
 	PxU8 flags)
 {
@@ -53,7 +69,8 @@ static PX_FORCE_INLINE void initContactPatch(CorrelationBuffer::ContactPatchData
 	patch.dynamicFriction = dynamicFriction;
 }
 
-bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
+template<bool supportAnisotropy>
+static bool createContactPatchesImpl(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
 {
 	// PT: this rewritten version below doesn't have LHS
 
@@ -80,6 +97,7 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 			const PxContactPoint& preContact = contacts[patchIndex];
 
 			if(curContact.staticFriction == preContact.staticFriction
+				&& (!supportAnisotropy || sameAreaFriction(curContact, preContact))
 				&& curContact.dynamicFriction == preContact.dynamicFriction
 				&& curContact.restitution == preContact.restitution
 				&& curContact.normal.dot(preContact.normal)>=normalTolerance)
@@ -116,6 +134,16 @@ bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32
 	return true;
 }
 
+bool createContactPatches(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
+{
+	return createContactPatchesImpl<false>(fb, cb, contactCount, normalTolerance);
+}
+
+bool createContactPatchesAnisotropic(CorrelationBuffer& fb, const PxContactPoint* cb, PxU32 contactCount, PxReal normalTolerance)
+{
+	return createContactPatchesImpl<true>(fb, cb, contactCount, normalTolerance);
+}
+
 static PX_FORCE_INLINE void initFrictionPatch(FrictionPatch& p, const PxVec3& worldNormal, const PxTransform& body0Pose, const PxTransform& body1Pose, 
 	PxReal restitution, PxReal staticFriction, PxReal dynamicFriction, PxU8 materialFlags)
 {
@@ -130,7 +158,8 @@ static PX_FORCE_INLINE void initFrictionPatch(FrictionPatch& p, const PxVec3& wo
 	p.materialFlags = materialFlags;
 }
 
-bool correlatePatches(CorrelationBuffer& fb, 
+template<bool supportAnisotropy>
+static bool correlatePatchesImpl(CorrelationBuffer& fb,
 					  const PxContactPoint* cb,
 					  const PxTransform& bodyFrame0,
 					  const PxTransform& bodyFrame1,
@@ -147,7 +176,10 @@ bool correlatePatches(CorrelationBuffer& fb,
 		const PxVec3 patchNormal = cb[c.start].normal;
 
 		PxU32 j=startFrictionPatchIndex;
-		for(;j<frictionPatchCount && ((patchNormal.dot(fb.frictionPatchWorldNormal[j]) < normalTolerance) 
+		for(;j<frictionPatchCount && ((patchNormal.dot(fb.frictionPatchWorldNormal[j]) < normalTolerance)
+			|| (supportAnisotropy && ((fb.frictionPatches[j].materialFlags ^ c.flags) & PxContactPoint::eHAS_AREA_FRICTION) != 0)
+			|| (supportAnisotropy && (c.flags & PxContactPoint::eHAS_AREA_FRICTION) &&
+				!sameAreaFriction(cb[c.start], cb[fb.contactPatches[fb.correlationListHeads[j]].start]))
 			|| fb.frictionPatches[j].restitution != c.restitution|| fb.frictionPatches[j].staticFriction != c.staticFriction || 
 			fb.frictionPatches[j].dynamicFriction != c.dynamicFriction);j++)
 			;
@@ -179,6 +211,28 @@ bool correlatePatches(CorrelationBuffer& fb,
 	fb.frictionPatchCount = frictionPatchCount;
 
 	return overflow;
+}
+
+bool correlatePatches(CorrelationBuffer& fb,
+					  const PxContactPoint* cb,
+					  const PxTransform& bodyFrame0,
+					  const PxTransform& bodyFrame1,
+					  PxReal normalTolerance,
+					  PxU32 startContactPatchIndex,
+					  PxU32 startFrictionPatchIndex)
+{
+	return correlatePatchesImpl<false>(fb, cb, bodyFrame0, bodyFrame1, normalTolerance, startContactPatchIndex, startFrictionPatchIndex);
+}
+
+bool correlatePatchesAnisotropic(CorrelationBuffer& fb,
+					  const PxContactPoint* cb,
+					  const PxTransform& bodyFrame0,
+					  const PxTransform& bodyFrame1,
+					  PxReal normalTolerance,
+					  PxU32 startContactPatchIndex,
+					  PxU32 startFrictionPatchIndex)
+{
+	return correlatePatchesImpl<true>(fb, cb, bodyFrame0, bodyFrame1, normalTolerance, startContactPatchIndex, startFrictionPatchIndex);
 }
 
 // run over the friction patches, trying to find two anchors per patch. If we already have

@@ -56,6 +56,9 @@ enum SolverConstraintType
 	DY_SC_TYPE_BLOCK_FRICTION,
 	DY_SC_TYPE_BLOCK_STATIC_FRICTION,
 
+	DY_SC_TYPE_ANISOTROPIC_CONTACT,
+	DY_SC_TYPE_ANISOTROPIC_STATIC_CONTACT,
+
 	DY_SC_CONSTRAINT_TYPE_COUNT	//Count of the number of different constraint types in the solver
 };
 

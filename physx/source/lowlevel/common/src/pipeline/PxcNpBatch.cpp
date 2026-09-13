@@ -91,6 +91,10 @@ static bool copyBuffers(PxsContactManagerOutput& cmOutput, Gu::Cache& cache, Pxc
 	bool ret = false;
 	//Copy the contact stream from previous buffer to current buffer...
 	PxU32 oldSize = sizeof(PxContact) * cmOutput.nbContacts + sizeof(PxContactPatch)*cmOutput.nbPatches;
+	// Material-only anisotropy uses expanded contacts without a modify callback,
+	// so frozen bodies can reuse this stream too. Include the trailing payload.
+	if(cmOutput.statusFlag & PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION)
+		oldSize += (sizeof(PxModifiableContact) + sizeof(PxContactAnisotropy) - sizeof(PxContact)) * cmOutput.nbContacts;
 	if(oldSize)
 	{
 		ret = true;
@@ -244,7 +248,17 @@ static bool copyBuffers(PxsContactManagerOutput& cmOutput, Gu::Cache& cache, Pxc
 	return ret;
 }
 
-//ML: isMeshType is used in the GPU codepath. If the collision pair is mesh/heightfield vs primitives, we need to allocate enough memory for the mForceAndIndiceStreamPool in the threadContext. 
+static PX_FORCE_INLINE bool pairUsesAnisotropy(const PxsMaterialManager& manager, const PxsMaterialInfo& materials)
+{
+	// Anisotropic friction requires one material per shape, so all contacts share this pair.
+	const PxU16 flags0 = PxU16(manager.getMaterial(materials.mMaterialIndex0)->flags);
+	const PxU16 flags1 = PxU16(manager.getMaterial(materials.mMaterialIndex1)->flags);
+	// Two anisotropic materials use the ordinary contact path and primary coefficients.
+	return ((flags0 ^ flags1) & PxsMaterialManager::eANISOTROPIC)
+		&& !((flags0 | flags1) & PxMaterialFlag::eDISABLE_FRICTION);
+}
+
+//ML: isMeshType is used in the GPU codepath. If the collision pair is mesh/heightfield vs primitives, we need to allocate enough memory for the mForceAndIndiceStreamPool in the threadContext.
 static bool finishContacts(const PxcNpWorkUnit& input, PxsContactManagerOutput& npOutput, PxcNpThreadContext& threadContext, PxsMaterialInfo* PX_RESTRICT pMaterials, const bool isMeshType, PxU64 contextID)
 {
 	PX_UNUSED(contextID);
@@ -253,7 +267,7 @@ static bool finishContacts(const PxcNpWorkUnit& input, PxsContactManagerOutput& 
 	PxContactBuffer& buffer = threadContext.mContactBuffer;
 
 	PX_ASSERT((npOutput.statusFlag & PxsContactManagerStatusFlag::eTOUCH_KNOWN) != PxsContactManagerStatusFlag::eTOUCH_KNOWN);
-	PxU8 statusFlags = PxU16(npOutput.statusFlag & (~PxsContactManagerStatusFlag::eTOUCH_KNOWN));
+	PxU8 statusFlags = PxU16(npOutput.statusFlag & (~(PxsContactManagerStatusFlag::eTOUCH_KNOWN | PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION)));
 	if(buffer.count)
 		statusFlags |= PxsContactManagerStatusFlag::eHAS_TOUCH;
 	else
@@ -291,17 +305,33 @@ static bool finishContacts(const PxcNpWorkUnit& input, PxsContactManagerOutput& 
 	if(!isMeshType && !createReports)
 		contactForceByteSize = 0;
 
-	const bool res = writeCompressedContact(buffer.contacts, buffer.count, &threadContext, npOutput.nbContacts, npOutput.contactPatches, npOutput.contactPoints, compressedContactSize,
+	// Decide before calling compression, so ordinary pairs in mixed scenes
+	// also retain the original entry point and argument list.
+	const bool useAnisotropy = threadContext.mMaterialManager->hasAnisotropy()
+#if PX_SUPPORT_GPU_PHYSX
+		// CPU contact generation can also feed a GPU dynamics scene.
+		&& !threadContext.mContactStreamPool
+#endif
+		&& pairUsesAnisotropy(*threadContext.mMaterialManager, pMaterials[0])
+		&& !(input.mFlags & (PxcNpWorkUnitFlag::eARTICULATION_BODY0 | PxcNpWorkUnitFlag::eARTICULATION_BODY1));
+	const bool res = useAnisotropy ?
+		writeCompressedContactWithAnisotropy(buffer.contacts, buffer.count, &threadContext, npOutput.nbContacts, npOutput.contactPatches, npOutput.contactPoints, compressedContactSize,
 		reinterpret_cast<PxReal*&>(npOutput.contactForces), contactForceByteSize, 
 		npOutput.frictionPatches, threadContext.mFrictionPatchStreamPool,
 		threadContext.mMaterialManager, ((input.mFlags & PxcNpWorkUnitFlag::eMODIFIABLE_CONTACT) != 0), 
 		false, pMaterials, npOutput.nbPatches, 0, NULL, NULL, threadContext.mCreateAveragePoint, threadContext.mContactStreamPool, 
-		threadContext.mPatchStreamPool, threadContext.mForceAndIndiceStreamPool, isMeshType) != 0;
+		threadContext.mPatchStreamPool, threadContext.mForceAndIndiceStreamPool, isMeshType, &input, &npOutput.statusFlag) != 0 :
+		writeCompressedContact(buffer.contacts, buffer.count, &threadContext, npOutput.nbContacts, npOutput.contactPatches, npOutput.contactPoints, compressedContactSize,
+			reinterpret_cast<PxReal*&>(npOutput.contactForces), contactForceByteSize,
+			npOutput.frictionPatches, threadContext.mFrictionPatchStreamPool,
+			threadContext.mMaterialManager, ((input.mFlags & PxcNpWorkUnitFlag::eMODIFIABLE_CONTACT) != 0),
+			false, pMaterials, npOutput.nbPatches, 0, NULL, NULL, threadContext.mCreateAveragePoint, threadContext.mContactStreamPool,
+			threadContext.mPatchStreamPool, threadContext.mForceAndIndiceStreamPool, isMeshType) != 0;
 
 	//handle buffer overflow
 	if(!npOutput.nbContacts)
 	{
-		PxU8 thisStatusFlags = PxU16(npOutput.statusFlag & (~PxsContactManagerStatusFlag::eTOUCH_KNOWN));
+		PxU8 thisStatusFlags = PxU16(npOutput.statusFlag & (~(PxsContactManagerStatusFlag::eTOUCH_KNOWN | PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION)));
 		thisStatusFlags |= PxsContactManagerStatusFlag::eHAS_NO_TOUCH;
 
 		npOutput.statusFlag = thisStatusFlags;
@@ -364,7 +394,7 @@ static PX_FORCE_INLINE bool checkContactsMustBeGenerated(PxcNpThreadContext& con
 	return true;
 }
 
-template<bool useLegacyCodepath>
+template<bool useLegacyCodepath, bool useContactCacheT = useLegacyCodepath>
 static PX_FORCE_INLINE void discreteNarrowPhase(PxcNpThreadContext& context, const PxcNpWorkUnit& input, Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID)
 {
 	PxGeometryType::Enum type0 = input.getGeomType0();
@@ -375,7 +405,7 @@ static PX_FORCE_INLINE void discreteNarrowPhase(PxcNpThreadContext& context, con
 	const PxsCachedTransform* cachedTransform0 = &context.mTransformCache->getTransformCache(input.mTransformCache0);
 	const PxsCachedTransform* cachedTransform1 = &context.mTransformCache->getTransformCache(input.mTransformCache1);
 
-	if(!checkContactsMustBeGenerated<useLegacyCodepath>(context, input, cache, output, cachedTransform0, cachedTransform1, flip, type0, type1))
+	if(!checkContactsMustBeGenerated<useContactCacheT>(context, input, cache, output, cachedTransform0, cachedTransform1, flip, type0, type1))
 		return;
 
 	PxsShapeCore* shape0 = const_cast<PxsShapeCore*>(input.getShapeCore0());
@@ -431,7 +461,7 @@ static PX_FORCE_INLINE void discreteNarrowPhase(PxcNpThreadContext& context, con
 		const PxcContactMethod conMethod = g_ContactMethodTable[type0][type1];
 		PX_ASSERT(conMethod);
 
-		const bool useContactCache = context.mContactCache && g_CanUseContactCache[type0][type1];
+		const bool useContactCache = useContactCacheT && context.mContactCache && g_CanUseContactCache[type0][type1];
 		if(useContactCache)
 		{
 			const bool status = PxcCacheLocalContacts(context, cache, *tm0, *tm1, conMethod, contactShape0, contactShape1);
@@ -509,4 +539,54 @@ void physx::PxcDiscreteNarrowPhasePCM(PxcNpThreadContext& context, const PxcNpWo
 {
 	LOCAL_PROFILE_ZONE("PxcDiscreteNarrowPhasePCM", contextID);
 	discreteNarrowPhase<false>(context, input, cache, output, contextID);
+}
+
+// Keep the temporary cache and legacy material-info array out of the ordinary
+// pair's stack frame in mixed scenes.
+static PX_NOINLINE void discreteNarrowPhaseLegacyUncached(PxcNpThreadContext& context, const PxcNpWorkUnit& input,
+	Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID)
+{
+	// Keep ownership of the PCM allocation. Invalidate it so a subsequent
+	// material change back to ordinary friction starts with fresh contacts.
+	if(cache.isMultiManifold())
+	{
+		cache.mCachedData = NULL;
+		cache.mCachedSize = 0;
+	}
+	else if(cache.isManifold())
+		cache.getManifold().clearManifold();
+
+	// Legacy contact streams have a different cache layout. Generate them
+	// afresh without allocating a second persistent cache or enlarging pairs.
+	// Box-box's separating-axis hint is layout-independent and can be retained.
+	Gu::Cache legacyCache;
+	legacyCache.mPairData = cache.mPairData;
+	discreteNarrowPhase<true, false>(context, input, legacyCache, output, contextID);
+	cache.mPairData = legacyCache.mPairData;
+}
+
+void physx::PxcDiscreteNarrowPhasePCMWithAnisotropy(PxcNpThreadContext& context, const PxcNpWorkUnit& input,
+	Gu::Cache& cache, PxsContactManagerOutput& output, PxU64 contextID)
+{
+	PxsMaterialInfo materials;
+	materials.mMaterialIndex0 = input.getShapeCore0()->mMaterialIndex;
+	materials.mMaterialIndex1 = input.getShapeCore1()->mMaterialIndex;
+	// Most pairs in a mixed scene are ordinary: reject them before geometry work.
+	if(!(input.mFlags & (PxcNpWorkUnitFlag::eARTICULATION_BODY0 | PxcNpWorkUnitFlag::eARTICULATION_BODY1 | PxcNpWorkUnitFlag::eSOFT_BODY))
+		&& pairUsesAnisotropy(*context.mMaterialManager, materials))
+	{
+		const PxGeometryType::Enum type0 = input.getGeomType0();
+		const PxGeometryType::Enum type1 = input.getGeomType1();
+		const bool poly0 = type0 == PxGeometryType::eBOX || type0 == PxGeometryType::eCONVEXMESH;
+		const bool poly1 = type1 == PxGeometryType::eBOX || type1 == PxGeometryType::eCONVEXMESH;
+		const bool mesh0 = type0 == PxGeometryType::eTRIANGLEMESH || type0 == PxGeometryType::eHEIGHTFIELD;
+		const bool mesh1 = type1 == PxGeometryType::eTRIANGLEMESH || type1 == PxGeometryType::eHEIGHTFIELD;
+		// Point/line contacts do not benefit from a polygonal footprint and retain PCM.
+		if((poly0 && (poly1 || mesh1)) || (poly1 && mesh0))
+		{
+			discreteNarrowPhaseLegacyUncached(context, input, cache, output, contextID);
+			return;
+		}
+	}
+	PxcDiscreteNarrowPhasePCM(context, input, cache, output, contextID);
 }

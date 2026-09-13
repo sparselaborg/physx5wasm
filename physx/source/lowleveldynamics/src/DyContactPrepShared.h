@@ -130,12 +130,14 @@ inline bool getFrictionPatches(CorrelationBuffer& c,
 	return true;
 }
 
+template<bool enableAreaFriction = false>
 PX_FORCE_INLINE PxU32 extractContacts(PxContactBuffer& buffer, const PxsContactManagerOutput& npOutput, bool& hasMaxImpulse, bool& hasTargetVelocity,
 							 PxReal& invMassScale0, PxReal& invMassScale1, PxReal& invInertiaScale0, PxReal& invInertiaScale1, PxReal defaultMaxImpulse)
 {
 	PxContactStreamIterator iter(npOutput.contactPatches, npOutput.contactPoints, npOutput.getInternalFaceIndice(), npOutput.nbPatches, npOutput.nbContacts);
 
 	PxU32 numContacts = buffer.count, origContactCount = buffer.count;
+	bool hasAreaFriction = false;
 	if(!iter.forceNoResponse)
 	{
 		invMassScale0 = iter.getInvMassScale0();
@@ -148,6 +150,13 @@ PX_FORCE_INLINE PxU32 extractContacts(PxContactBuffer& buffer, const PxsContactM
 		while(iter.hasNextPatch())
 		{
 			iter.nextPatch();
+			const PxContactAnisotropy* patchAnisotropy = NULL;
+			if(enableAreaFriction && (iter.patch->internalFlags & PxContactPatch::eHAS_ANISOTROPY))
+			{
+				// The payload follows the full input stream, including ignored contacts.
+				patchAnisotropy = reinterpret_cast<const PxContactAnisotropy*>(npOutput.contactPoints
+					+ npOutput.nbContacts * sizeof(PxModifiableContact)) + iter.patch->startContactIndex;
+			}
 			while(iter.hasNextContact() && (numContacts < PxContactBuffer::MAX_CONTACTS))
 			{
 				iter.nextContact();
@@ -171,15 +180,42 @@ PX_FORCE_INLINE PxU32 extractContacts(PxContactBuffer& buffer, const PxsContactM
 					buffer.contacts[numContacts].damping = iter.getDamping();
 					const PxVec3& targetVel = iter.getTargetVel();
 					buffer.contacts[numContacts].targetVel = targetVel;
+					if(enableAreaFriction && patchAnisotropy)
+					{
+						const PxContactAnisotropy* source = patchAnisotropy + iter.nextContactIndex - 1;
+						PxContactPoint& dest = buffer.contacts[numContacts];
+						// Use the final normal, including any contact callback override.
+						const PxVec3 tangent = source->frictionDirection - dest.normal * dest.normal.dot(source->frictionDirection);
+						if(tangent.magnitudeSquared() > 1e-12f)
+						{
+							dest.materialFlags |= PxContactPoint::eHAS_AREA_FRICTION;
+							dest.setAnisotropy(source);
+							hasAreaFriction = true;
+						}
+					}
+
 					++numContacts;
 				}
 			}
 		}
 	}
 	const PxU32 contactCount = numContacts - origContactCount;
+	if(enableAreaFriction && hasAreaFriction) buffer.contacts[origContactCount].materialFlags |= PxContactPoint::eAREA_FRICTION_PAIR;
 	buffer.count = numContacts;
 	return contactCount;
 }
+
+// Keep anisotropic friction in the existing scalar PGS path.
+PX_FORCE_INLINE bool hasAreaFrictionContacts(const PxContactPoint* contacts, PxU32 count)
+{
+	return count && (contacts[0].materialFlags & (PxContactPoint::eAREA_FRICTION_PAIR | PxContactPoint::eHAS_AREA_FRICTION));
+}
+
+PX_FORCE_INLINE bool hasAreaFrictionMaterial(const PxsContactManagerOutput& output)
+{
+	return (output.statusFlag & PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION) != 0;
+}
+
 
 struct CorrelationListIterator
 {

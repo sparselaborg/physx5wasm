@@ -26,6 +26,7 @@
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.  
      
+#include "DyPatchFriction.h"
 #include "foundation/PxPreprocessor.h"
 #include "foundation/PxVecMath.h"
 #include "DyThreadContext.h"
@@ -46,6 +47,7 @@ namespace physx
 namespace Dy
 {
 
+template<bool supportAnisotropy>
 static void setupFinalizeSolverConstraints(
 							const PxSolverContactDesc& contactDesc,
 							const CorrelationBuffer& c,
@@ -140,6 +142,9 @@ static void setupFinalizeSolverConstraints(
 
 		const PxU32 firstPatch = c.correlationListHeads[i];
 		const PxContactPoint* contactBase0 = buffer + c.contactPatches[firstPatch].start;
+		const bool areaFriction = supportAnisotropy && (contactBase0->materialFlags & PxContactPoint::eHAS_AREA_FRICTION) != 0;
+		const PxU32 frictionAnchorCount = areaFriction ? c.getAreaSampleCount(i) : frictionPatch.anchorCount;
+		PatchFrictionSamples areaSamples;
 
 		SolverContactHeader* PX_RESTRICT header = reinterpret_cast<SolverContactHeader*>(ptr);
 		ptr += sizeof(SolverContactHeader);		
@@ -148,7 +153,7 @@ static void setupFinalizeSolverConstraints(
 		PxPrefetchLine(ptr, 256);
 
 		header->shapeInteraction = getInteraction(contactDesc);
-		header->flags = flags;
+		header->flags = PxU8(flags | (areaFriction ? SolverContactHeader::eAREA_FRICTION : 0));
 		FStore(invMass0_dom0fV, &header->invMass0);
 		FStore(FNeg(invMass1_dom1fV), &header->invMass1);
 		const FloatV restitution = FLoad(contactBase0->restitution);
@@ -209,11 +214,11 @@ static void setupFinalizeSolverConstraints(
 		staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetX(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(staticFriction));
 		staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = V4SetY(staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W, FLoad(dynamicFriction));
 
-		const bool haveFriction = (disableStrongFriction == 0 && frictionPatch.anchorCount != 0);//PX_IR(n.staticFriction) > 0 || PX_IR(n.dynamicFriction) > 0;
+		const bool haveFriction = (disableStrongFriction == 0 && frictionAnchorCount != 0);//PX_IR(n.staticFriction) > 0 || PX_IR(n.dynamicFriction) > 0;
 		header->numNormalConstr		= PxTo8(contactCount);
-		header->numFrictionConstr	= PxTo8(haveFriction ? frictionPatch.anchorCount*2 : 0);
+		header->numFrictionConstr	= PxTo8(haveFriction ? frictionAnchorCount*2 : 0);
 	
-		header->type				= type;
+		header->type				= supportAnisotropy ? (staticOrKinematicBody ? DY_SC_TYPE_ANISOTROPIC_STATIC_CONTACT : DY_SC_TYPE_ANISOTROPIC_CONTACT) : type;
 
 		header->staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W = staticFrictionX_dynamicFrictionY_dominance0Z_dominance1W;
 		FStore(angD0, &header->angDom0);
@@ -223,28 +228,53 @@ static void setupFinalizeSolverConstraints(
 
 		if(haveFriction)
 		{
-			const Vec3V linVrel = V3Sub(linVel0, linVel1);
-			//const Vec3V normal = Vec3V_From_PxVec3_Aligned(buffer.contacts[c.contactPatches[c.correlationListHeads[i]].start].normal);
+			Vec3V t0;
+			PxReal areaStaticFriction = 0.f, areaDynamicFriction = 0.f;
+			PxReal secondaryStaticFriction = 0.f, secondaryDynamicFriction = 0.f;
+			Vec3V areaTargetVelocity = V3Zero();
+			Vec3V areaOrigin0 = V3Zero(), areaOrigin1 = V3Zero();
+			if(areaFriction)
+			{
+				buildPatchFrictionSamples(c, i, buffer, areaSamples);
+				// Subtract world origins before adding the small sample offsets.
+				const Vec3V origin = V3LoadA(contactBase0->point);
+				areaOrigin0 = V3Sub(origin, bodyFrame0p);
+				areaOrigin1 = V3Sub(origin, bodyFrame1p);
+				// Correlation guarantees that every sample shares this basis and material.
+				const PxContactAnisotropy& anisotropy = *contactBase0->getAnisotropy();
+				t0 = V3LoadU(anisotropy.frictionDirection);
+				t0 = V3Normalize(V3Sub(t0, V3Scale(normal, V3Dot(normal, t0))));
+				areaStaticFriction = contactBase0->staticFriction;
+				areaDynamicFriction = contactBase0->dynamicFriction;
+				secondaryStaticFriction = anisotropy.staticFrictionSecondary;
+				secondaryDynamicFriction = anisotropy.dynamicFrictionSecondary;
+				// Cancel common linear motion before projection, once for the patch.
+				areaTargetVelocity = V3Sub(V3LoadA(contactBase0->targetVel), V3Sub(linVel0, linVel1));
+			}
+			else
+			{
+				const Vec3V linVrel = V3Sub(linVel0, linVel1);
+				const FloatV orthoThreshold = FLoad(0.70710678f);
+				const FloatV p1 = FLoad(0.0001f);
+				// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
+				const FloatV normalX = V3GetX(normal);
+				const FloatV normalY = V3GetY(normal);
+				const FloatV normalZ = V3GetZ(normal);
 
-			const FloatV orthoThreshold = FLoad(0.70710678f);
-			const FloatV p1 = FLoad(0.0001f);
-			// fallback: normal.cross((1,0,0)) or normal.cross((0,0,1))
-			const FloatV normalX = V3GetX(normal);
-			const FloatV normalY = V3GetY(normal);
-			const FloatV normalZ = V3GetZ(normal);
-			
-			const Vec3V t0Fallback1 = V3Merge(zero, FNeg(normalZ), normalY);
-			const Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
-			const Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
+				const Vec3V t0Fallback1 = V3Merge(zero, FNeg(normalZ), normalY);
+				const Vec3V t0Fallback2 = V3Merge(FNeg(normalY), normalX, zero);
+				const Vec3V t0Fallback = V3Sel(FIsGrtr(orthoThreshold, FAbs(normalX)), t0Fallback1, t0Fallback2);
 
-			Vec3V t0 = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
-			t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
-			t0 = V3Normalize(t0);
+				t0 = V3Sub(linVrel, V3Scale(normal, V3Dot(normal, linVrel)));
+				t0 = V3Sel(FIsGrtr(V3LengthSq(t0), p1), t0, t0Fallback);
+				t0 = V3Normalize(t0);
+			}
 
 			const VecCrossV t0Cross = V3PrepareCross(t0);
-
 			const Vec3V t1 = V3Cross(norCross, t0Cross);
 			const VecCrossV t1Cross = V3PrepareCross(t1);
+			const FloatV areaLinearTarget0 = areaFriction ? V3Dot(areaTargetVelocity, t0) : zero;
+			const FloatV areaLinearTarget1 = areaFriction ? V3Dot(areaTargetVelocity, t1) : zero;
 		
 			// since we don't even have the body velocities we can't compute the tangent dirs, so 
 			// the only thing we can do right now is to write the geometric information (which is the
@@ -267,7 +297,7 @@ static void setupFinalizeSolverConstraints(
 			const QuatV bodyFrame0q = QuatVLoadU(&contactDesc.bodyFrame0.q.x);
 			const QuatV bodyFrame1q = QuatVLoadU(&contactDesc.bodyFrame1.q.x);
 
-			for(PxU32 j = 0; j < frictionPatch.anchorCount; j++)
+			for(PxU32 j = 0; j < frictionAnchorCount; j++)
 			{
 				PxPrefetchLine(ptr, 256);
 				PxPrefetchLine(ptr, 384);
@@ -276,22 +306,37 @@ static void setupFinalizeSolverConstraints(
 				SolverContactFriction* PX_RESTRICT f1 = reinterpret_cast<SolverContactFriction*>(ptr);
 				ptr += frictionStride;
 
-				const Vec3V body0Anchor = V3LoadU_SafeReadW(frictionPatch.body0Anchors[j]);	// PT: see compile-time-assert in FrictionPatch
-				const Vec3V body1Anchor = V3LoadU_SafeReadW(frictionPatch.body1Anchors[j]);	// PT: see compile-time-assert in FrictionPatch
-
-				const Vec3V ra = QuatRotate(bodyFrame0q, body0Anchor);
-				const Vec3V rb = QuatRotate(bodyFrame1q, body1Anchor);
-
-				/*ra = V3Sel(V3IsGrtr(solverOffsetSlop, V3Abs(ra)), v3Zero, ra);
-				rb = V3Sel(V3IsGrtr(solverOffsetSlop, V3Abs(rb)), v3Zero, rb);*/
-
-				Vec3V error = V3Sub(V3Add(ra, bodyFrame0p), V3Add(rb, bodyFrame1p));
-				error = V3Sel(V3IsGrtr(solverOffsetSlop, V3Abs(error)), v3Zero, error);
-
-				PxU32 index = c.contactID[i][j];
-				index = index == 0xFFFF ? c.contactPatches[c.correlationListHeads[i]].start : index;
-
-				const Vec3V tvel = V3LoadA(buffer[index].targetVel);
+				Vec3V ra, rb, error, tvel;
+				if(areaFriction)
+				{
+					ra = V3Add(areaOrigin0, V3LoadU(areaSamples.primary[j]));
+					rb = V3Add(areaOrigin1, V3LoadU(areaSamples.primary[j]));
+					error = V3Zero();
+					f0->staticFriction = areaStaticFriction * areaSamples.primaryWeight[j];
+					f0->dynamicFriction = areaDynamicFriction * areaSamples.primaryWeight[j];
+					f1->staticFriction = secondaryStaticFriction * areaSamples.secondaryWeight[j];
+					f1->dynamicFriction = secondaryDynamicFriction * areaSamples.secondaryWeight[j];
+					f0->mPad = f1->mPad = 0;
+				}
+				else
+				{
+					if(supportAnisotropy)
+					{
+						// Use one row format throughout an anisotropic solver stream,
+						// including ordinary patches with a degenerate projection.
+						f0->staticFriction = f1->staticFriction = staticFriction;
+						f0->dynamicFriction = f1->dynamicFriction = dynamicFriction;
+					}
+					const Vec3V body0Anchor = V3LoadU_SafeReadW(frictionPatch.body0Anchors[j]);	// PT: see compile-time-assert in FrictionPatch
+					const Vec3V body1Anchor = V3LoadU_SafeReadW(frictionPatch.body1Anchors[j]);	// PT: see compile-time-assert in FrictionPatch
+					ra = QuatRotate(bodyFrame0q, body0Anchor);
+					rb = QuatRotate(bodyFrame1q, body1Anchor);
+					error = V3Sub(V3Add(ra, bodyFrame0p), V3Add(rb, bodyFrame1p));
+					error = V3Sel(V3IsGrtr(solverOffsetSlop, V3Abs(error)), v3Zero, error);
+					PxU32 index = c.contactID[i][j];
+					index = index == 0xFFFF ? c.contactPatches[c.correlationListHeads[i]].start : index;
+					tvel = V3LoadA(buffer[index].targetVel);
+				}
 				
 				{
 					Vec3V raXn = V3Cross(ra, t0Cross);
@@ -309,13 +354,16 @@ static void setupFinalizeSolverConstraints(
 
 					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
 
-					FloatV targetVel = V3Dot(tvel, t0);
-
-					const FloatV vrel1 = FAdd(V3Dot(t0, linVel0), V3Dot(raXn, angVel0));
-					const FloatV vrel2 = FAdd(V3Dot(t0, linVel1), V3Dot(rbXn, angVel1));
-					const FloatV vrel = FSub(vrel1, vrel2);
-
-					targetVel = FSub(targetVel, vrel);
+					FloatV targetVel;
+					if(areaFriction)
+						targetVel = FSub(areaLinearTarget0, FSub(V3Dot(raXn, angVel0), V3Dot(rbXn, angVel1)));
+					else
+					{
+						targetVel = V3Dot(tvel, t0);
+						const FloatV vrel1 = FAdd(V3Dot(t0, linVel0), V3Dot(raXn, angVel0));
+						const FloatV vrel2 = FAdd(V3Dot(t0, linVel1), V3Dot(rbXn, angVel1));
+						targetVel = FSub(targetVel, FSub(vrel1, vrel2));
+					}
 
 					f0->normalXYZ_appliedForceW = V4ClearW(Vec4V_From_Vec3V(t0));
 					f0->raXnXYZ_velMultiplierW = V4SetW(raXnSqrtInertia, velMultiplier);
@@ -323,6 +371,11 @@ static void setupFinalizeSolverConstraints(
 					FStore(targetVel, &f0->targetVel);
 				}
 
+				if(areaFriction)
+				{
+					ra = V3Add(areaOrigin0, V3LoadU(areaSamples.secondary[j]));
+					rb = V3Add(areaOrigin1, V3LoadU(areaSamples.secondary[j]));
+				}
 				{
 					Vec3V raXn = V3Cross(ra, t1Cross);
 					Vec3V rbXn = V3Cross(rb, t1Cross);
@@ -339,13 +392,16 @@ static void setupFinalizeSolverConstraints(
 
 					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
 
-					FloatV targetVel = V3Dot(tvel, t1);
-
-					const FloatV vrel1 = FAdd(V3Dot(t1, linVel0), V3Dot(raXn, angVel0));
-					const FloatV vrel2 = FAdd(V3Dot(t1, linVel1), V3Dot(rbXn, angVel1));
-					const FloatV vrel = FSub(vrel1, vrel2);
-
-					targetVel = FSub(targetVel, vrel);
+					FloatV targetVel;
+					if(areaFriction)
+						targetVel = FSub(areaLinearTarget1, FSub(V3Dot(raXn, angVel0), V3Dot(rbXn, angVel1)));
+					else
+					{
+						targetVel = V3Dot(tvel, t1);
+						const FloatV vrel1 = FAdd(V3Dot(t1, linVel0), V3Dot(raXn, angVel0));
+						const FloatV vrel2 = FAdd(V3Dot(t1, linVel1), V3Dot(rbXn, angVel1));
+						targetVel = FSub(targetVel, FSub(vrel1, vrel2));
+					}
 
 					f1->normalXYZ_appliedForceW = V4ClearW(Vec4V_From_Vec3V(t1));
 					f1->raXnXYZ_velMultiplierW = V4SetW(raXnSqrtInertia, velMultiplier);
@@ -359,6 +415,7 @@ static void setupFinalizeSolverConstraints(
 	}
 }
 
+template<bool supportAnisotropy>
 PX_FORCE_INLINE void computeBlockStreamByteSizes(const bool useExtContacts, const CorrelationBuffer& c,
 								PxU32& _solverConstraintByteSize, PxU32& _frictionPatchByteSize, PxU32& _numFrictionPatches,
 								PxU32& _axisConstraintCount)
@@ -395,9 +452,11 @@ PX_FORCE_INLINE void computeBlockStreamByteSizes(const bool useExtContacts, cons
 
 			if(haveFriction)
 			{
-				solverConstraintByteSize += useExtContacts ? c.frictionPatches[i].anchorCount * 2 * sizeof(SolverContactFrictionExt)
-					: c.frictionPatches[i].anchorCount * 2 * sizeof(SolverContactFriction);
-				axisConstraintCount += c.frictionPatches[i].anchorCount * 2;
+				const PxU32 anchors = (supportAnisotropy && (frictionPatch.materialFlags & PxContactPoint::eHAS_AREA_FRICTION))
+					? c.getAreaSampleCount(i) : frictionPatch.anchorCount;
+				solverConstraintByteSize += useExtContacts ? anchors * 2 * sizeof(SolverContactFrictionExt)
+					: anchors * 2 * sizeof(SolverContactFriction);
+				axisConstraintCount += anchors * 2;
 			}
 		}
 	}
@@ -413,6 +472,7 @@ PX_FORCE_INLINE void computeBlockStreamByteSizes(const bool useExtContacts, cons
 	PX_ASSERT(0 == (_frictionPatchByteSize & 0x0f));
 }
 
+template<bool supportAnisotropy>
 static bool reserveBlockStreams(const bool useExtContacts, Dy::CorrelationBuffer& cBuffer,
 						PxU8*& solverConstraint,
 						FrictionPatch*& _frictionPatches,
@@ -428,7 +488,7 @@ static bool reserveBlockStreams(const bool useExtContacts, Dy::CorrelationBuffer
 	//From frictionPatchStream we just need to reserve a single buffer.
 	PxU32 frictionPatchByteSize = 0;
 	//Compute the sizes of all the buffers.
-	computeBlockStreamByteSizes(
+	computeBlockStreamByteSizes<supportAnisotropy>(
 		useExtContacts, cBuffer,
 		solverConstraintByteSize, frictionPatchByteSize, numFrictionPatches,
 		axisConstraintCount);
@@ -472,7 +532,8 @@ static bool reserveBlockStreams(const bool useExtContacts, Dy::CorrelationBuffer
 	return ((0==constraintBlockByteSize || constraintBlock) && (0==frictionPatchByteSize || frictionPatches));
 }
 
-bool createFinalizeSolverContacts(
+template<bool supportAnisotropy>
+static bool createFinalizeSolverContactsImpl(
 	PxSolverContactDesc& contactDesc,
 	CorrelationBuffer& c,
 	PxReal invDtF32,
@@ -495,11 +556,13 @@ bool createFinalizeSolverContacts(
 	const bool hasForceThreshold = contactDesc.hasForceThresholds;
 	const bool staticOrKinematicBody = contactDesc.bodyState1 == PxSolverContactDesc::eKINEMATIC_BODY || contactDesc.bodyState1 == PxSolverContactDesc::eSTATIC_BODY;
 
-	const bool disableStrongFriction = contactDesc.disableStrongFriction;
+	const bool disableStrongFriction = contactDesc.disableStrongFriction
+		|| supportAnisotropy;
 
 	PxSolverConstraintDesc& desc = *contactDesc.desc;
 
-	const bool useExtContacts = (desc.linkIndexA != PxSolverConstraintDesc::RIGID_BODY || desc.linkIndexB != PxSolverConstraintDesc::RIGID_BODY);
+	PX_ASSERT(!supportAnisotropy || (desc.linkIndexA == PxSolverConstraintDesc::RIGID_BODY && desc.linkIndexB == PxSolverConstraintDesc::RIGID_BODY));
+	const bool useExtContacts = !supportAnisotropy && (desc.linkIndexA != PxSolverConstraintDesc::RIGID_BODY || desc.linkIndexB != PxSolverConstraintDesc::RIGID_BODY);
 
 	desc.constraint = NULL;
 	desc.constraintLengthOver16 = 0; // from here onwards we use this field for the constraint size, not the constraint type anymore
@@ -516,8 +579,10 @@ bool createFinalizeSolverContacts(
 		getFrictionPatches(c, contactDesc.frictionPtr, contactDesc.frictionCount, contactDesc.bodyFrame0, contactDesc.bodyFrame1, correlationDistance);
 	}
 
-	bool overflow = !createContactPatches(c, contactDesc.contacts, contactDesc.numContacts, PXC_SAME_NORMAL);
-	overflow = correlatePatches(c, contactDesc.contacts, contactDesc.bodyFrame0, contactDesc.bodyFrame1, PXC_SAME_NORMAL, 0, 0) || overflow;
+	bool overflow = !(supportAnisotropy ? createContactPatchesAnisotropic(c, contactDesc.contacts, contactDesc.numContacts, PXC_SAME_NORMAL)
+		: createContactPatches(c, contactDesc.contacts, contactDesc.numContacts, PXC_SAME_NORMAL));
+	overflow = (supportAnisotropy ? correlatePatchesAnisotropic(c, contactDesc.contacts, contactDesc.bodyFrame0, contactDesc.bodyFrame1, PXC_SAME_NORMAL, 0, 0)
+		: correlatePatches(c, contactDesc.contacts, contactDesc.bodyFrame0, contactDesc.bodyFrame1, PXC_SAME_NORMAL, 0, 0)) || overflow;
 	PX_UNUSED(overflow);
 
 #if PX_CHECKED
@@ -527,7 +592,17 @@ bool createFinalizeSolverContacts(
 
 	growPatches(c, contactDesc.contacts, contactDesc.bodyFrame0, contactDesc.bodyFrame1, 0, frictionOffsetThreshold + contactDesc.restDistance);
 
-	//PX_ASSERT(patchCount == c.frictionPatchCount);
+	if(supportAnisotropy)
+	{
+		for(PxU32 i=0; i<c.frictionPatchCount; ++i)
+		{
+			if(c.frictionPatchContactCounts[i] && (c.frictionPatches[i].materialFlags & PxContactPoint::eHAS_AREA_FRICTION))
+			{
+				c.setAreaSampleCount(i, c.frictionPatchContactCounts[i] == 1 ? 1u
+					: PatchFrictionSamples::SAMPLE_COUNT);
+			}
+		}
+	}
 
 	FrictionPatch* frictionPatches = NULL;
 	PxU8* solverConstraint = NULL;
@@ -535,7 +610,7 @@ bool createFinalizeSolverContacts(
 	PxU32 solverConstraintByteSize = 0;
 	PxU32 axisConstraintCount = 0;
 
-	const bool successfulReserve = reserveBlockStreams(
+	const bool successfulReserve = reserveBlockStreams<supportAnisotropy>(
 		useExtContacts, c,
 		solverConstraint, frictionPatches,
 		numFrictionPatches,
@@ -592,7 +667,7 @@ bool createFinalizeSolverContacts(
 			}
 			else
 			{
-				setupFinalizeSolverConstraints(
+				setupFinalizeSolverConstraints<supportAnisotropy>(
 					contactDesc,
 					c,
 					solverConstraint,
@@ -608,6 +683,25 @@ bool createFinalizeSolverContacts(
 	}
 
 	return successfulReserve;
+}
+
+bool createFinalizeSolverContacts(
+	PxSolverContactDesc& contactDesc,
+	CorrelationBuffer& c,
+	const PxReal invDtF32,
+	const PxReal dtF32,
+	PxReal bounceThresholdF32,
+	PxReal frictionOffsetThreshold,
+	PxReal correlationDistance,
+	PxReal biasCoefficient,
+	PxConstraintAllocator& constraintAllocator,
+	Cm::SpatialVectorF* Z)
+{
+	if(hasAreaFrictionContacts(contactDesc.contacts, contactDesc.numContacts)
+		&& contactDesc.desc->linkIndexA == PxSolverConstraintDesc::RIGID_BODY
+		&& contactDesc.desc->linkIndexB == PxSolverConstraintDesc::RIGID_BODY)
+		return createFinalizeSolverContactsImpl<true>(contactDesc, c, invDtF32, dtF32, bounceThresholdF32, frictionOffsetThreshold, correlationDistance, biasCoefficient, constraintAllocator, Z);
+	return createFinalizeSolverContactsImpl<false>(contactDesc, c, invDtF32, dtF32, bounceThresholdF32, frictionOffsetThreshold, correlationDistance, biasCoefficient, constraintAllocator, Z);
 }
 
 FloatV setupExtSolverContact(const SolverExtBody& b0, const SolverExtBody& b1,
@@ -742,8 +836,7 @@ bool createFinalizeSolverContacts(PxSolverContactDesc& contactDesc,
 
 		bool hasMaxImpulse = false, hasTargetVelocity = false;
 
-		numContacts = extractContacts(buffer, output, hasMaxImpulse, hasTargetVelocity, invMassScale0, invMassScale1,
-			invInertiaScale0, invInertiaScale1, PxMin(contactDesc.data0->maxContactImpulse, contactDesc.data1->maxContactImpulse));
+		numContacts = hasAreaFrictionMaterial(output) ? extractContacts<true>(buffer, output, hasMaxImpulse, hasTargetVelocity, invMassScale0, invMassScale1, invInertiaScale0, invInertiaScale1, PxMin(contactDesc.data0->maxContactImpulse, contactDesc.data1->maxContactImpulse)) : extractContacts<false>(buffer, output, hasMaxImpulse, hasTargetVelocity, invMassScale0, invMassScale1, invInertiaScale0, invInertiaScale1, PxMin(contactDesc.data0->maxContactImpulse, contactDesc.data1->maxContactImpulse));
 
 		contactDesc.contacts = buffer.contacts;
 		contactDesc.numContacts = numContacts;
@@ -777,6 +870,9 @@ void updateFrictionAnchorCountAndPosition(PxSolverConstraintDesc& desc, PxsConta
 {
 	desc.writeBackFriction = NULL;
 	if (output.frictionPatches == NULL) return;
+	// The public patch report has storage for two anchors, not area-integration rows.
+	if(hasAreaFrictionContacts(blockDesc.contacts, blockDesc.numContacts))
+		return;
 	const PxReal NORMAL_THRESHOLD = 0.999f;
 	const PxTransform& bodyFrame0 = blockDesc.bodyFrame0;
 	for (PxU32 frictionIndex = 0; frictionIndex < blockDesc.frictionCount; ++frictionIndex)

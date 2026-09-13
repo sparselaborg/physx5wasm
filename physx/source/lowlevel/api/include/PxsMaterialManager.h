@@ -113,7 +113,7 @@ namespace physx
 
 		MaterialCore* materials;//make sure materials's start address is 16 bytes align
 		PxU32 maxMaterials;
-		PxU32 mPad;
+		PxU32 mAnisotropicMaterialCount; // Uses former padding; only used by the rigid material manager.
 #if !PX_P64_FAMILY
 		PxU32 mPad2;
 #endif
@@ -122,6 +122,37 @@ namespace physx
 	//This class is used for forward declaration
 	class PxsMaterialManager : public PxsMaterialManagerT<PxsMaterialCore>
 	{
+	public:
+		// Internal bit in the already-read combined material flags, not a public material flag.
+		enum { eANISOTROPIC = 1 << 5 };
+		PxsMaterialManager() { mAnisotropicMaterialCount = 0; }
+		bool hasAnisotropy() const { return mAnisotropicMaterialCount != 0; }
+		void setMaterial(PxsMaterialCore* mat)
+		{
+			const PxU16 index = mat->mMaterialIndex;
+			const bool wasAnisotropic = hasAnisotropy() && index < maxMaterials
+				&& materials[index].mMaterialIndex != MATERIAL_INVALID_HANDLE
+				&& (PxU16(materials[index].flags) & eANISOTROPIC);
+			PxsMaterialManagerT<PxsMaterialCore>::setMaterial(mat);
+			PxsMaterialCore& stored = materials[index];
+			const bool isAnisotropic = !stored.frictionDirection.isZero();
+			if(isAnisotropic) stored.flags = PxMaterialFlags(PxU16(stored.flags) | eANISOTROPIC);
+			if(isAnisotropic && !wasAnisotropic) ++mAnisotropicMaterialCount;
+			else if(wasAnisotropic && !isAnisotropic) --mAnisotropicMaterialCount;
+		}
+		void updateMaterial(PxsMaterialCore* mat)
+		{
+			setMaterial(mat);
+		}
+		void removeMaterial(PxsMaterialCore* mat)
+		{
+			if(PxU16(mat->flags) & eANISOTROPIC)
+			{
+				PX_ASSERT(mAnisotropicMaterialCount);
+				--mAnisotropicMaterialCount;
+			}
+			PxsMaterialManagerT<PxsMaterialCore>::removeMaterial(mat);
+		}
 	};
 
 	class PxsDeformableSurfaceMaterialManager : public PxsMaterialManagerT<PxsDeformableSurfaceMaterialCore>

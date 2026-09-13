@@ -107,6 +107,7 @@ SET(LLDYNAMICS_SOURCE
 	${LLDYNAMICS_BASE_DIR}/src/DyDynamics.h
 	${LLDYNAMICS_BASE_DIR}/src/DyFrictionPatch.h
 	${LLDYNAMICS_BASE_DIR}/src/DyFrictionPatchStreamPair.h
+	${LLDYNAMICS_BASE_DIR}/src/DyPatchFriction.h
 	${LLDYNAMICS_BASE_DIR}/src/DySolverBody.h
 	${LLDYNAMICS_BASE_DIR}/src/DySolverConstraint1D.h
 	${LLDYNAMICS_BASE_DIR}/src/DySolverConstraint1D4.h

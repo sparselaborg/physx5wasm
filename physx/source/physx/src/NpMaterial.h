@@ -87,6 +87,12 @@ public:
 	virtual		void				setDampingCombineMode(PxCombineMode::Enum combMode) PX_OVERRIDE;
 	virtual		PxCombineMode::Enum	getDampingCombineMode() const PX_OVERRIDE;
 
+	virtual void setFrictionDirection(const PxVec3& direction) PX_OVERRIDE;
+	virtual PxVec3 getFrictionDirection() const PX_OVERRIDE;
+	virtual void setStaticFrictionSecondary(PxReal coefficient) PX_OVERRIDE;
+	virtual PxReal getStaticFrictionSecondary() const PX_OVERRIDE;
+	virtual void setDynamicFrictionSecondary(PxReal coefficient) PX_OVERRIDE;
+	virtual PxReal getDynamicFrictionSecondary() const PX_OVERRIDE;
 	//~PxMaterial
 
 	PX_FORCE_INLINE static void		getMaterialIndices(PxMaterial*const* materials, PxU16* materialIndices, PxU32 materialCount);

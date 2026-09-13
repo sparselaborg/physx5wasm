@@ -35,6 +35,7 @@ namespace physx
 {
 class PxcNpThreadContext;
 struct PxsMaterialInfo;
+struct PxcNpWorkUnit;
 class PxsMaterialManager;
 class PxsConstraintBlockManager;
 class PxcConstraintBlockStream;
@@ -54,6 +55,16 @@ PxU32 writeCompressedContact(const PxContactPoint* const PX_RESTRICT contactPoin
 								const PxsMaterialManager* materialManager, bool hasModifiableContacts, bool forceNoResponse, const PxsMaterialInfo* PX_RESTRICT pMaterial, PxU8& numPatches,
 								PxU32 additionalHeaderSize = 0, PxsConstraintBlockManager* manager = NULL, PxcConstraintBlockStream* blockStream = NULL, bool insertAveragePoint = false,
 								PxcDataStreamPool* pool = NULL, PxcDataStreamPool* patchStreamPool = NULL, PxcDataStreamPool* forcePool = NULL, const bool isMeshType = false);
+
+// CPU discrete contacts only. The caller must have found exactly one anisotropic
+// material with friction enabled; this entry point does not repeat material classification.
+PxU32 writeCompressedContactWithAnisotropy(const PxContactPoint* const PX_RESTRICT contactPoints, const PxU32 numContactPoints, PxcNpThreadContext* threadContext,
+								PxU16& writtenContactCount, PxU8*& outContactPatches, PxU8*& outContactPoints, PxU16& compressedContactSize, PxReal*& contactForces, PxU32 contactForceByteSize,
+								PxU8*& outFrictionPatches, PxcDataStreamPool* frictionPatchesStreamPool,
+								const PxsMaterialManager* materialManager, bool hasModifiableContacts, bool forceNoResponse, const PxsMaterialInfo* PX_RESTRICT pMaterial, PxU8& numPatches,
+								PxU32 additionalHeaderSize, PxsConstraintBlockManager* manager, PxcConstraintBlockStream* blockStream, bool insertAveragePoint,
+								PxcDataStreamPool* pool, PxcDataStreamPool* patchStreamPool, PxcDataStreamPool* forcePool, const bool isMeshType,
+								const PxcNpWorkUnit* workUnit, PxU8* outputStatus);
 
 }
 

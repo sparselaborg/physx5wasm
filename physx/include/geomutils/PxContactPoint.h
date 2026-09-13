@@ -36,8 +36,21 @@ namespace physx
 {
 #endif
 
+	// Optional per-contact data, allocated only for anisotropic contact pairs.
+	struct PxContactAnisotropy
+	{
+		// World-space material axis; project onto the final normal during solver preparation.
+		PxVec3 frictionDirection;
+		PxReal staticFrictionSecondary;
+		PxReal dynamicFrictionSecondary;
+		PxContactAnisotropy() : frictionDirection(0.f), staticFrictionSecondary(0.f),
+			dynamicFrictionSecondary(0.f) {}
+	};
+
 	struct PxContactPoint
 	{
+		// Internal contact-preparation flag, outside the PxMaterialFlag bits.
+		enum { eHAS_AREA_FRICTION = 1 << 7, eAREA_FRICTION_PAIR = 1 << 6 };
 		/**
 		\brief The normal of the contacting surfaces at the contact point.
 
@@ -93,6 +106,18 @@ namespace physx
 		\brief Damping coefficient (for compliant contacts)
 		*/
 		PxReal damping;
+
+		// Optional solver-preparation data, stored in existing tail padding.
+		// Never read or initialized for ordinary contacts.
+		const PxContactAnisotropy* anisotropyData;
+		PX_FORCE_INLINE const PxContactAnisotropy* getAnisotropy() const
+		{
+			return anisotropyData;
+		}
+		PX_FORCE_INLINE void setAnisotropy(const PxContactAnisotropy* data)
+		{
+			anisotropyData = data;
+		}
 	};
 
 #if !PX_DOXYGEN

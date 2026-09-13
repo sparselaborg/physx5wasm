@@ -56,7 +56,8 @@ namespace physx
 													// contact report callback if requested.
 			eDIRTY_MANAGER				= (1 << 5),
 			eTOUCH_KNOWN				= eHAS_NO_TOUCH | eHAS_TOUCH,	// The touch status is known (if narrowphase never ran for a pair then no flag will be set)
-			eSTATIC_OR_KINEMATIC		= (1 << 6)
+			eSTATIC_OR_KINEMATIC		= (1 << 6),
+			eANISOTROPIC_FRICTION		= (1 << 7)
 		};
 	};
 		
