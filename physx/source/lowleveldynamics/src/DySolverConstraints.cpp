@@ -42,6 +42,141 @@
 using namespace physx;
 using namespace Dy;
 
+// Two-row block update inside PGS. The normal impulse is fixed for this update.
+// Minimize 0.5*f^T*A*f - q^T*f over the tangential friction ellipse.
+static bool ellipseImpulse(double a, double b, double c, double q0, double q1, double s0, double s1, double d0,
+						   double d1, double& f0, double& f1)
+{
+	const double det = a * c - b * b;
+	// A sticking impulse lies inside the static ellipse, hence inside its
+	// enclosing rectangle. Reject impossible sticking before the divisions.
+	if(det <= 0. || (PxAbs(q0) <= a * s0 + PxAbs(b) * s1 && PxAbs(q1) <= PxAbs(b) * s0 + c * s1))
+	{
+		f0 = det > 0 ? (c * q0 - b * q1) / det : 0.;
+		f1 = det > 0 ? (a * q1 - b * q0) / det : 0.;
+		if(s0 > 0 && s1 > 0 && (f0 / s0) * (f0 / s0) + (f1 / s1) * (f1 / s1) <= 1.)
+			return false;
+	}
+	if(!(d0 > 0 && d1 > 0))
+	{
+		f0 = d0 > 0 && a > 0 ? PxClamp(q0 / a, -d0, d0) : 0.;
+		f1 = d1 > 0 && c > 0 ? PxClamp(q1 / c, -d1, d1) : 0.;
+		return true;
+	}
+	// Contact modification can lower static friction below dynamic friction.
+	// In that case the dynamic minimizer can be inside its ellipse: do not
+	// normalize it to the boundary and overshoot the velocity being cancelled.
+	if((s0 < d0 || s1 < d1) && det > 0.)
+	{
+		f0 = (c * q0 - b * q1) / det;
+		f1 = (a * q1 - b * q0) / det;
+		if((f0 / d0) * (f0 / d0) + (f1 / d1) * (f1 / d1) <= 1.)
+			return true;
+	}
+	a *= d0 * d0;
+	b *= d0 * d1;
+	c *= d1 * d1;
+	q0 *= d0;
+	q1 *= d1;
+	const double magnitude = PxSqrt(q0 * q0 + q1 * q1);
+	// Zero desired impulse also fits a degenerate static ellipse.
+	if(magnitude == 0.)
+	{
+		f0 = f1 = 0.;
+		return false;
+	}
+	const double trace = a + c;
+	const double disc = PxSqrt((a - c) * (a - c) + 4 * b * b);
+	const double small = PxMax(0., (trace - disc) * .5), large = (trace + disc) * .5;
+	double lo = PxMax(0., magnitude - large), hi = PxMax(0., magnitude - small);
+	// The response along the unconstrained force direction provides a
+	// closer initial multiplier; retain the original bracket and tolerance.
+	const double rayleigh = (a * q0 * q0 + 2. * b * q0 * q1 + c * q1 * q1) / (magnitude * magnitude);
+	double l = PxClamp(magnitude - rayleigh, lo, hi), x = 0., y = 0.;
+	double norm = 0.;
+	for(PxU32 k = 0; k < 16; ++k)
+	{
+		const double den = (a + l) * (c + l) - b * b;
+		// Retain the adjugate numerators: the common denominator cancels
+		// when the final force direction is normalized.
+		x = (c + l) * q0 - b * q1;
+		y = (a + l) * q1 - b * q0;
+		const double length2 = x * x + y * y;
+		const double den2 = den * den;
+		norm = PxSqrt(length2);
+		if(PxAbs(length2 - den2) < 1e-10 * den2)
+			break;
+		if(length2 > den2)
+			lo = l;
+		else
+			hi = l;
+		const double derivative = (a + c + 2. * l) * length2 - den * (x * q0 + y * q1);
+		const double next = l - (den - norm) * length2 / derivative;
+		l = next > lo && next < hi ? next : (lo + hi) * .5;
+	}
+	const double invLength = 1. / norm;
+	f0 = d0 * x * invLength;
+	f1 = d1 * y * invLength;
+	return true;
+}
+
+template <bool bStatic>
+static void solveEllipticFriction(SolverContactHeader& header, SolverContactFriction* rows, const FloatV normalImpulse,
+								  Vec3V& lin0, Vec3V& ang0, Vec3V& lin1, Vec3V& ang1)
+{
+	const FloatV mass0 = FLoad(header.invMass0), mass1 = FLoad(header.invMass1);
+	const FloatV dom0 = FLoad(header.angDom0), dom1 = FLoad(header.angDom1);
+	PxReal load;
+	FStore(normalImpulse, &load);
+	PxU32 broken = 0;
+	for(PxU32 i = 0; i < header.numFrictionConstr; i += 2)
+	{
+		SolverContactFriction& f = rows[i];
+		SolverContactFriction& g = rows[i + 1];
+		// Empty integration cells have zero capacity in both directions.
+		if(f.staticFriction == 0.f && f.dynamicFriction == 0.f && g.staticFriction == 0.f && g.dynamicFriction == 0.f)
+			continue;
+		const Vec3V n0 = f.getNormal(), n1 = g.getNormal();
+		const Vec3V r0 = Vec3V_From_Vec4V(f.raXnXYZ_velMultiplierW), r1 = Vec3V_From_Vec4V(g.raXnXYZ_velMultiplierW);
+		const Vec3V t0 = Vec3V_From_Vec4V(f.rbXnXYZ_biasW), t1 = Vec3V_From_Vec4V(g.rbXnXYZ_biasW);
+		FloatV v0 = FAdd(V3Dot(lin0, n0), V3Dot(ang0, r0));
+		FloatV v1 = FAdd(V3Dot(lin0, n1), V3Dot(ang0, r1));
+		const FloatV a = V4GetW(f.raXnXYZ_velMultiplierW);
+		const FloatV b = FLoad(f.crossResponse);
+		const FloatV c = V4GetW(g.raXnXYZ_velMultiplierW);
+		if(!bStatic)
+		{
+			v0 = FSub(v0, FAdd(V3Dot(lin1, n0), V3Dot(ang1, t0)));
+			v1 = FSub(v1, FAdd(V3Dot(lin1, n1), V3Dot(ang1, t1)));
+		}
+		PxReal aa, bb, cc, u, v, old0, old1;
+		FStore(a, &aa);
+		FStore(b, &bb);
+		FStore(c, &cc);
+		FStore(v0, &u);
+		FStore(v1, &v);
+		FStore(f.getAppliedForce(), &old0);
+		FStore(g.getAppliedForce(), &old1);
+		const double q0 = double(aa) * old0 + double(bb) * old1 - double(u) + f.targetVel;
+		const double q1 = double(bb) * old0 + double(cc) * old1 - double(v) + g.targetVel;
+		double new0, new1;
+		broken |= ellipseImpulse(aa, bb, cc, q0, q1, load * f.staticFriction, load * g.staticFriction,
+								 load * f.dynamicFriction, load * g.dynamicFriction, new0, new1);
+		const FloatV delta0 = FLoad(PxReal(new0) - old0), delta1 = FLoad(PxReal(new1) - old1);
+		const Vec3V impulse = V3Add(V3Scale(n0, delta0), V3Scale(n1, delta1));
+		lin0 = V3ScaleAdd(impulse, mass0, lin0);
+		ang0 = V3ScaleAdd(V3Add(V3Scale(r0, delta0), V3Scale(r1, delta1)), dom0, ang0);
+		if(!bStatic)
+		{
+			lin1 = V3NegScaleSub(impulse, mass1, lin1);
+			ang1 = V3NegScaleSub(V3Add(V3Scale(t0, delta0), V3Scale(t1, delta1)), dom1, ang1);
+		}
+		f.setAppliedForce(FLoad(PxReal(new0)));
+		g.setAppliedForce(FLoad(PxReal(new1)));
+	}
+	header.broken = broken;
+}
+
 //Port of scalar implementation to SIMD maths with some interleaving of instructions
 static void solve1D(const PxSolverConstraintDesc& desc)
 {
@@ -345,6 +480,11 @@ static void solveContact(const PxSolverConstraintDesc& desc, SolverContext& cach
 		const FloatV accumulatedNormalImpulse = solveDynamicContacts(contacts, numNormalConstr, contactNormal, invMassA, invMassB, 
 			angDom0, angDom1, linVel0, angState0, linVel1, angState1, forceBuffer); 
 
+		if(supportAnisotropy && cache.doFriction && numFrictionConstr && (hdr->flags & SolverContactHeader::eELLIPTICAL_FRICTION))
+		{
+			solveEllipticFriction<false>(*hdr,frictions,accumulatedNormalImpulse,linVel0,angState0,linVel1,angState1);
+			continue;
+		}
 		if(cache.doFriction && numFrictionConstr)
 		{
 			const FloatV staticFrictionCof = hdr->getStaticFriction();
@@ -492,6 +632,12 @@ static void solveContact_BStatic(const PxSolverConstraintDesc& desc, SolverConte
 		const FloatV accumulatedNormalImpulse = solveStaticContacts(contacts, numNormalConstr, contactNormal,
 			invMassA, angDom0, linVel0, angState0, forceBuffer);
 
+		if(supportAnisotropy && cache.doFriction && numFrictionConstr && (hdr->flags & SolverContactHeader::eELLIPTICAL_FRICTION))
+		{
+			Vec3V lin1=V3Zero(),ang1=V3Zero();
+			solveEllipticFriction<true>(*hdr,frictions,accumulatedNormalImpulse,linVel0,angState0,lin1,ang1);
+			continue;
+		}
 		if(cache.doFriction && numFrictionConstr)
 		{
 			FloatV maxFrictionImpulse = FMul(hdr->getStaticFriction(), accumulatedNormalImpulse);
@@ -681,7 +827,7 @@ void writeBackContact(const PxSolverConstraintDesc& desc, SolverContext& cache,
 		SolverContactFriction* PX_RESTRICT frictions = reinterpret_cast<SolverContactFriction*>(cPtr);
 		cPtr += numFrictionConstr * frictionStride;
 
-		if(vFrictionWriteback && !(hdr->flags & SolverContactHeader::eAREA_FRICTION))
+		if(vFrictionWriteback)
 			writeBackContactFriction(frictions, numFrictionConstr, frictionStride, vFrictionWriteback);
 	}
 	PX_ASSERT(cPtr == last);

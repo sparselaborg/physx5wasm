@@ -55,7 +55,7 @@ struct SolverContactHeader
 	enum DySolverContactFlags
 	{
 		eHAS_FORCE_THRESHOLDS = 0x1,
-		eAREA_FRICTION = 0x2
+		eELLIPTICAL_FRICTION = 0x2
 	};
 
 	PxU8	type;					//Note: mType should be first as the solver expects a type in the first byte.
@@ -152,6 +152,7 @@ struct SolverContactFriction
 {
 	// Keep the original 64-byte row; area coefficients use former padding.
 	Vec4V normalXYZ_appliedForceW;		//16
+	// W stores the diagonal response for elliptical pairs.
 	Vec4V raXnXYZ_velMultiplierW;		//32
 	Vec4V rbXnXYZ_biasW;				//48
 	PxReal targetVel;					//52
@@ -159,7 +160,8 @@ struct SolverContactFriction
 	// The ordinary solver does not read these former padding fields.
 	PxReal staticFriction;
 	PxReal dynamicFriction;
-	PxU32 mPad;			//64
+	// Elliptical pairs cache the off-diagonal response in the first row.
+	union { PxU32 mPad; PxReal crossResponse; };	//64
 
 	PX_FORCE_INLINE void setAppliedForce(const FloatV f)	{ normalXYZ_appliedForceW = V4SetW(normalXYZ_appliedForceW,f);	}
 	PX_FORCE_INLINE void setBias(const FloatV f)			{ rbXnXYZ_biasW = V4SetW(rbXnXYZ_biasW,f);						}

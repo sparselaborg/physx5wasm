@@ -212,8 +212,8 @@ static PX_FORCE_INLINE PxU32 writeCompressedContactImpl(const PxContactPoint* co
 	// Expanded anisotropic contacts alone cannot split patches. Only contact modification
 	// needs one header per contact (also required by PxContactSet::getPatch()).
 	const PxU32 patchHeaderSize = sizeof(PxContactPatch) * (mayModifyContacts ? totalContactPoints : totalUniquePatches) + additionalHeaderSize;
-	const PxU32 pointSize = totalContactPoints * ((isModifiable ? sizeof(PxModifiableContact) : sizeof(PxContact))
-		+ (hasMaterialAnisotropy ? sizeof(PxContactAnisotropy) : 0));
+	const PxU32 pointSize = totalContactPoints * (isModifiable ? sizeof(PxModifiableContact) : sizeof(PxContact))
+		+ (hasMaterialAnisotropy ? PxContactAnisotropy::getDataSize(totalContactPoints) : 0);
 
 	const PxU32 requiredContactSize = pointSize;
 	const PxU32 requiredPatchSize = patchHeaderSize;
@@ -410,6 +410,18 @@ static PX_FORCE_INLINE PxU32 writeCompressedContactImpl(const PxContactPoint* co
 
 		PxModifiableContact* PX_RESTRICT point = reinterpret_cast<PxModifiableContact*>(contactData);
 		PxContactAnisotropy* extra = reinterpret_cast<PxContactAnisotropy*>(point + totalContactPoints);
+		PxContactFrictionPatch* geometry = NULL;
+		if(hasMaterialAnisotropy)
+		{
+			geometry = reinterpret_cast<PxContactFrictionPatch*>(reinterpret_cast<PxU8*>(extra)
+				+ ((totalContactPoints * sizeof(PxContactAnisotropy) + 15) & ~15u));
+			geometry->geometry[0] = &workUnit->getShapeCore0()->mGeometry.getGeometry();
+			geometry->geometry[1] = &workUnit->getShapeCore1()->mGeometry.getGeometry();
+			geometry->pose[0] = threadContext->mTransformCache->getTransformCache(workUnit->mTransformCache0).transform;
+			geometry->pose[1] = threadContext->mTransformCache->getTransformCache(workUnit->mTransformCache1).transform;
+			geometry->contactCount = totalContactPoints;
+			geometry->normal = contactPoints[0].normal;
+		}
 
 		for(PxU32 a = 0; a < numStrideHeaders; ++a)
 		{
@@ -473,7 +485,13 @@ static PX_FORCE_INLINE PxU32 writeCompressedContactImpl(const PxContactPoint* co
 					point->materialFlags = materialFlags;
 					point->materialIndex0 = matIndex0;
 					point->materialIndex1 = matIndex1;
-					if(hasMaterialAnisotropy) extra[currentIndex] = pairAnisotropy;
+					if(hasMaterialAnisotropy)
+					{
+						extra[currentIndex] = pairAnisotropy;
+						extra[currentIndex].originalPoint = point->contact;
+						extra[currentIndex].patchDataOffset = PxU32(reinterpret_cast<PxU8*>(geometry)
+							- reinterpret_cast<PxU8*>(extra + currentIndex));
+					}
 					point++;
 					currentIndex++;
 					PxPrefetchLine(point, 128);
@@ -496,7 +514,13 @@ static PX_FORCE_INLINE PxU32 writeCompressedContactImpl(const PxContactPoint* co
 						point->materialFlags = materialFlags;
 						point->materialIndex0 = matIndex0;
 						point->materialIndex1 = matIndex1;
-						if(hasMaterialAnisotropy) extra[currentIndex] = pairAnisotropy;
+						if(hasMaterialAnisotropy)
+						{
+							extra[currentIndex] = pairAnisotropy;
+							extra[currentIndex].originalPoint = point->contact;
+							extra[currentIndex].patchDataOffset = PxU32(reinterpret_cast<PxU8*>(geometry)
+								- reinterpret_cast<PxU8*>(extra + currentIndex));
+						}
 						if (faceIndice)
 						{
 							*faceIndice = contactPoints[b].internalFaceIndex1;

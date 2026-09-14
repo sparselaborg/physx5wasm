@@ -151,8 +151,9 @@ public:
 	If the projection vanishes, ordinary friction is used for that patch.
 
 	The existing static/dynamic coefficients apply along this direction. The secondary
-	coefficients apply perpendicular to it in the contact plane. Each axis has independent
-	Coulomb bounds. Both axes use the existing friction combine mode; an ordinary material
+	coefficients apply perpendicular to it in the contact plane. The two components
+	share an elliptical Coulomb bound (circular when the coefficients are equal).
+	Both axes use the existing friction combine mode; an ordinary material
 	contributes its existing coefficients on both axes. If both materials enable this
 	option, ordinary isotropic friction is used with their existing primary coefficients
 	and combine mode; secondary coefficients and friction directions are ignored.
@@ -164,10 +165,12 @@ public:
 	can use different materials, such as an anisotropic conveyor material and an
 	isotropic case material. Multiple materials on a single shape are not supported.
 	Each patch must describe one convex, approximately planar contact
-	region. Friction integrates uniform pressure over the contact hull using the patch's
-	solved normal impulse and 16 samples per tangent (one for a single-point patch).
-	Normal contacts and compliance are unchanged. Reduced manifolds
-	can underestimate this hull. Friction-anchor persistence and reports are disabled for
+	region. Friction integrates uniform pressure using the patch's solved normal impulse
+	and up to 32 integration samples (one for a single-point patch). Approximately parallel
+	box/convex faces use their projected intersection; a plane does not clip the other face.
+	Other geometry, split patches and callbacks that move/ignore points or substantially
+	change the normal use the contact hull, which reduced manifolds can underestimate.
+	Normal contacts and compliance are unchanged. Friction-anchor persistence and reports are disabled for
 	these patches; normal contact reports remain available. No contact callback is required.
 	*/
 	virtual void setFrictionDirection(const PxVec3& direction) = 0;

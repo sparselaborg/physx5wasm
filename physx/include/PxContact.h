@@ -67,7 +67,7 @@ struct PxContactPatch
 		eHAS_MAX_IMPULSE = 32,				//!< Indicates this contact stream has max impulses set
 		eREGENERATE_PATCHES = 64,			//!< Indicates this contact stream needs patches re-generated. This is required if the application modified either the contact normal or the material properties
 		eCOMPRESSED_MODIFIED_CONTACT = 128,
-		eHAS_ANISOTROPY = 256 // Optional PxContactAnisotropy array follows all modifiable contacts
+		eHAS_ANISOTROPY = 256 // Optional anisotropy array and aligned shared geometry follow the modifiable contacts
 	};
 
 	/**

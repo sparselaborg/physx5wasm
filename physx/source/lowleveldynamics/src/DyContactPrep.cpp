@@ -153,7 +153,7 @@ static void setupFinalizeSolverConstraints(
 		PxPrefetchLine(ptr, 256);
 
 		header->shapeInteraction = getInteraction(contactDesc);
-		header->flags = PxU8(flags | (areaFriction ? SolverContactHeader::eAREA_FRICTION : 0));
+		header->flags = PxU8(flags);
 		FStore(invMass0_dom0fV, &header->invMass0);
 		FStore(FNeg(invMass1_dom1fV), &header->invMass1);
 		const FloatV restitution = FLoad(contactBase0->restitution);
@@ -235,7 +235,6 @@ static void setupFinalizeSolverConstraints(
 			Vec3V areaOrigin0 = V3Zero(), areaOrigin1 = V3Zero();
 			if(areaFriction)
 			{
-				buildPatchFrictionSamples(c, i, buffer, areaSamples);
 				// Subtract world origins before adding the small sample offsets.
 				const Vec3V origin = V3LoadA(contactBase0->point);
 				areaOrigin0 = V3Sub(origin, bodyFrame0p);
@@ -248,8 +247,16 @@ static void setupFinalizeSolverConstraints(
 				areaDynamicFriction = contactBase0->dynamicFriction;
 				secondaryStaticFriction = anisotropy.staticFrictionSecondary;
 				secondaryDynamicFriction = anisotropy.dynamicFrictionSecondary;
+				if((areaStaticFriction > 0 || areaDynamicFriction > 0) && (secondaryStaticFriction > 0 || secondaryDynamicFriction > 0))
+					header->flags |= SolverContactHeader::eELLIPTICAL_FRICTION;
 				// Cancel common linear motion before projection, once for the patch.
 				areaTargetVelocity = V3Sub(V3LoadA(contactBase0->targetVel), V3Sub(linVel0, linVel1));
+				// Predict the slip field for spatial integration; do not prescribe a
+				// body velocity or change the friction limits used by the solver.
+				PxVec3 slipAtOrigin, relativeAngularVelocity;
+				V3StoreU(V3Sub(areaTargetVelocity, V3Sub(V3Cross(angVel0, areaOrigin0), V3Cross(angVel1, areaOrigin1))), slipAtOrigin);
+				V3StoreU(V3Sub(angVel0, angVel1), relativeAngularVelocity);
+				buildPatchFrictionSamples(c, i, buffer, areaSamples, slipAtOrigin, relativeAngularVelocity);
 			}
 			else
 			{
@@ -297,6 +304,7 @@ static void setupFinalizeSolverConstraints(
 			const QuatV bodyFrame0q = QuatVLoadU(&contactDesc.bodyFrame0.q.x);
 			const QuatV bodyFrame1q = QuatVLoadU(&contactDesc.bodyFrame1.q.x);
 
+			const bool coupledFriction = supportAnisotropy && (header->flags & SolverContactHeader::eELLIPTICAL_FRICTION);
 			for(PxU32 j = 0; j < frictionAnchorCount; j++)
 			{
 				PxPrefetchLine(ptr, 256);
@@ -352,7 +360,8 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
+					const FloatV velMultiplier = coupledFriction ? (staticOrKinematicBody ? resp0 : resp)
+						: FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
 
 					FloatV targetVel;
 					if(areaFriction)
@@ -390,7 +399,8 @@ static void setupFinalizeSolverConstraints(
 					const FloatV resp1 = FSub(FMul(angD1, V3Dot(rbXnSqrtInertia, rbXnSqrtInertia)), invMass1_dom1fV);
 					const FloatV resp = FAdd(resp0, resp1);
 
-					const FloatV velMultiplier = FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
+					const FloatV velMultiplier = coupledFriction ? (staticOrKinematicBody ? resp0 : resp)
+						: FSel(FIsGrtr(resp, zero), FDiv(biasCoefficientV, resp), zero);
 
 					FloatV targetVel;
 					if(areaFriction)
@@ -407,6 +417,17 @@ static void setupFinalizeSolverConstraints(
 					f1->raXnXYZ_velMultiplierW = V4SetW(raXnSqrtInertia, velMultiplier);
 					f1->rbXnXYZ_biasW = V4SetW(rbXnSqrtInertia, FMul(V3Dot(t1, error), invDt));
 					FStore(targetVel, &f1->targetVel);
+				}
+				if(coupledFriction)
+				{
+					// The effective mass is constant throughout the PGS solve.
+					const Vec3V r0=Vec3V_From_Vec4V(f0->raXnXYZ_velMultiplierW);
+					const Vec3V r1=Vec3V_From_Vec4V(f1->raXnXYZ_velMultiplierW);
+					FloatV crossResponse=FMul(angD0,V3Dot(r0,r1));
+					if(!staticOrKinematicBody)
+						crossResponse=FAdd(crossResponse,FMul(angD1,V3Dot(
+							Vec3V_From_Vec4V(f0->rbXnXYZ_biasW),Vec3V_From_Vec4V(f1->rbXnXYZ_biasW))));
+					FStore(crossResponse,&f0->crossResponse);
 				}
 			}
 		}
@@ -685,6 +706,16 @@ static bool createFinalizeSolverContactsImpl(
 	return successfulReserve;
 }
 
+// Keep anisotropic allocation/preparation out of the common entry point, including
+// its compiler-generated register and stack layout for ordinary contact pairs.
+static PX_NOINLINE bool createFinalizeAnisotropicContacts(PxSolverContactDesc& contactDesc, CorrelationBuffer& c,
+	PxReal invDt, PxReal dt, PxReal bounceThreshold, PxReal frictionOffsetThreshold, PxReal correlationDistance,
+	PxReal biasCoefficient, PxConstraintAllocator& constraintAllocator, Cm::SpatialVectorF* Z)
+{
+	return createFinalizeSolverContactsImpl<true>(contactDesc, c, invDt, dt, bounceThreshold, frictionOffsetThreshold,
+		correlationDistance, biasCoefficient, constraintAllocator, Z);
+}
+
 bool createFinalizeSolverContacts(
 	PxSolverContactDesc& contactDesc,
 	CorrelationBuffer& c,
@@ -700,7 +731,7 @@ bool createFinalizeSolverContacts(
 	if(hasAreaFrictionContacts(contactDesc.contacts, contactDesc.numContacts)
 		&& contactDesc.desc->linkIndexA == PxSolverConstraintDesc::RIGID_BODY
 		&& contactDesc.desc->linkIndexB == PxSolverConstraintDesc::RIGID_BODY)
-		return createFinalizeSolverContactsImpl<true>(contactDesc, c, invDtF32, dtF32, bounceThresholdF32, frictionOffsetThreshold, correlationDistance, biasCoefficient, constraintAllocator, Z);
+		return createFinalizeAnisotropicContacts(contactDesc, c, invDtF32, dtF32, bounceThresholdF32, frictionOffsetThreshold, correlationDistance, biasCoefficient, constraintAllocator, Z);
 	return createFinalizeSolverContactsImpl<false>(contactDesc, c, invDtF32, dtF32, bounceThresholdF32, frictionOffsetThreshold, correlationDistance, biasCoefficient, constraintAllocator, Z);
 }
 

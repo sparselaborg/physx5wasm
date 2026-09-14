@@ -30,11 +30,25 @@
 #define PX_CONTACT_POINT_H
 
 #include "foundation/PxVec3.h"
+#include "foundation/PxTransform.h"
 
 #if !PX_DOXYGEN
 namespace physx
 {
 #endif
+	class PxGeometry;
+
+	// Internal, optional geometry shared by an anisotropic pair. Shape geometry is
+	// immutable during simulation; the poses belong to this contact-generation pass.
+	// This is used only during CPU rigid-body PGS preparation, never by reports.
+	PX_ALIGN_PREFIX(16)
+	struct PxContactFrictionPatch
+	{
+		const PxGeometry* geometry[2];
+		PxTransform pose[2];
+		PxU32 contactCount;
+		PxVec3 normal;
+	} PX_ALIGN_SUFFIX(16);
 
 	// Optional per-contact data, allocated only for anisotropic contact pairs.
 	struct PxContactAnisotropy
@@ -43,8 +57,21 @@ namespace physx
 		PxVec3 frictionDirection;
 		PxReal staticFrictionSecondary;
 		PxReal dynamicFrictionSecondary;
+		// Offset from this entry to the shared geometry, preserved by stream copies.
+		// Zero for contacts supplied directly to the immediate-mode solver.
+		PxU32 patchDataOffset;
+		PxVec3 originalPoint;
 		PxContactAnisotropy() : frictionDirection(0.f), staticFrictionSecondary(0.f),
-			dynamicFrictionSecondary(0.f) {}
+			dynamicFrictionSecondary(0.f), patchDataOffset(0), originalPoint(0.f) {}
+		PX_FORCE_INLINE const PxContactFrictionPatch* getPatchData() const
+		{
+			return patchDataOffset ? reinterpret_cast<const PxContactFrictionPatch*>(
+				reinterpret_cast<const PxU8*>(this) + patchDataOffset) : NULL;
+		}
+		PX_FORCE_INLINE static PxU32 getDataSize(PxU32 count)
+		{
+			return ((count * sizeof(PxContactAnisotropy) + 15) & ~15u) + sizeof(PxContactFrictionPatch);
+		}
 	};
 
 	struct PxContactPoint

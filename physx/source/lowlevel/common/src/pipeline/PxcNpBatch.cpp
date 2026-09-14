@@ -94,7 +94,7 @@ static bool copyBuffers(PxsContactManagerOutput& cmOutput, Gu::Cache& cache, Pxc
 	// Material-only anisotropy uses expanded contacts without a modify callback,
 	// so frozen bodies can reuse this stream too. Include the trailing payload.
 	if(cmOutput.statusFlag & PxsContactManagerStatusFlag::eANISOTROPIC_FRICTION)
-		oldSize += (sizeof(PxModifiableContact) + sizeof(PxContactAnisotropy) - sizeof(PxContact)) * cmOutput.nbContacts;
+		oldSize += (sizeof(PxModifiableContact) - sizeof(PxContact)) * cmOutput.nbContacts + PxContactAnisotropy::getDataSize(cmOutput.nbContacts);
 	if(oldSize)
 	{
 		ret = true;
