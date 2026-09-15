@@ -27,6 +27,7 @@
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.  
 
 #include "GuPCMContactGenUtil.h"
+#include "GuDistancePointTriangle.h"
 
 using namespace physx;
 using namespace Gu;
@@ -198,22 +199,70 @@ PxI32 Gu::getPolygonIndex(const PolygonalData& polyData, const SupportLocal* map
 	return closestFaceIndex;
 }
 
+static PxReal distancePointPolygonSquared(const PolygonalData& polyData, const SupportLocal* map, PxU32 polygonIndex, const Vec3VArg point)
+{
+	const HullPolygonData& polygon = polyData.mPolygons[polygonIndex];
+	const PxU8* inds = polyData.mPolygonVertexRefs + polygon.mVRef8;
+	PX_ASSERT(polygon.mNbVerts >= 3);
+
+	Vec3V v0;
+	Vec3V v1;
+	Vec3V v2;
+	if(map->isIdentityScale)
+	{
+		v0 = V3LoadU_SafeReadW(polyData.mVerts[inds[0]]);
+		v1 = V3LoadU_SafeReadW(polyData.mVerts[inds[1]]);
+	}
+	else
+	{
+		v0 = M33MulV3(map->vertex2Shape, V3LoadU_SafeReadW(polyData.mVerts[inds[0]]));
+		v1 = M33MulV3(map->vertex2Shape, V3LoadU_SafeReadW(polyData.mVerts[inds[1]]));
+	}
+
+	FloatV minDistanceSquared = FMax();
+	FloatV u;
+	FloatV v;
+	Vec3V closestPoint;
+	for(PxU32 i = 1; i + 1 < polygon.mNbVerts; ++i)
+	{
+		if(map->isIdentityScale)
+			v2 = V3LoadU_SafeReadW(polyData.mVerts[inds[i + 1]]);
+		else
+			v2 = M33MulV3(map->vertex2Shape, V3LoadU_SafeReadW(polyData.mVerts[inds[i + 1]]));
+		minDistanceSquared = FMin(minDistanceSquared, distancePointTriangleSquared(point, v0, v1, v2, u, v, closestPoint));
+		v1 = v2;
+	}
+
+	PxReal result;
+	FStore(minDistanceSquared, &result);
+	return result;
+}
+
+static PX_FORCE_INLINE PxReal distancePointPlane(const SupportLocal* map, const PxPlane& plane, const Vec3VArg point,
+	const PxVec3& scalarPoint)
+{
+	if(map->isIdentityScale)
+		return plane.distance(scalarPoint);
+
+	const Vec3V planeNormal = M33TrnspsMulV3(map->shape2Vertex, V3LoadU_SafeReadW(plane.n));
+	const FloatV invPlaneNormalLength = FRecip(V3Length(planeNormal));
+	PxReal distance;
+	FStore(FMul(FAdd(V3Dot(planeNormal, point), FLoad(plane.d)), invPlaneNormalLength), &distance);
+	return distance;
+}
+
 PxU32 Gu::getWitnessPolygonIndex(const PolygonalData& polyData, const SupportLocal* map, const Vec3VArg normal, const Vec3VArg closest, PxReal tolerance)
 {
 	PxReal pd[256];
-	//first pass : calculate the smallest distance from the closest point to the polygon face
-
-	//transform the closest p to vertex space
-	const Vec3V p = M33MulV3(map->shape2Vertex, closest);
+	//first pass : calculate the smallest distance from the closest point to a polygon's supporting plane
 	PxU32 closestFaceIndex = 0;
-
-	PxVec3 closestP;
-	V3StoreU(p, closestP);
+	PxVec3 closestPoint;
+	V3StoreU(closest, closestPoint);
 
 	const PxReal eps = -tolerance;
 
 	PxPlane plane = polyData.mPolygons[0].mPlane;
-	PxReal dist = plane.distance(closestP);
+	PxReal dist = distancePointPlane(map, plane, closest, closestPoint);
 	PxReal minDist = dist >= eps ? PxAbs(dist) : PX_MAX_F32;
 	pd[0] = minDist;
 	PxReal maxDist = dist;
@@ -222,7 +271,7 @@ PxU32 Gu::getWitnessPolygonIndex(const PolygonalData& polyData, const SupportLoc
 	for (PxU32 i = 1; i < polyData.mNbPolygons; ++i)
 	{
 		plane = polyData.mPolygons[i].mPlane;
-		dist = plane.distance(closestP);
+		dist = distancePointPlane(map, plane, closest, closestPoint);
 		pd[i] = dist >= eps ? PxAbs(dist) : PX_MAX_F32;
 		if (minDist > pd[i])
 		{
@@ -239,18 +288,40 @@ PxU32 Gu::getWitnessPolygonIndex(const PolygonalData& polyData, const SupportLoc
 	if (minDist == PX_MAX_F32)
 		return maxFaceIndex;
 
-	//second pass : select the face which has the normal most close to the gjk/epa normal
+	// The plane distance is a lower bound on the distance to the finite polygon.
+	// The exact distance to the nearest plane's polygon supplies an upper bound, so
+	// faces whose planes exceed that bound plus tolerance cannot be candidates.
+	const PxReal initialPolygonDistanceSquared = distancePointPolygonSquared(polyData, map, closestFaceIndex, closest);
+	const PxReal planeDistanceLimit = PxSqrt(initialPolygonDistanceSquared) + tolerance;
+	PxReal minPolygonDistanceSquared = initialPolygonDistanceSquared;
+	for(PxU32 i = 0; i < polyData.mNbPolygons; ++i)
+	{
+		if(pd[i] <= planeDistanceLimit)
+		{
+			pd[i] = i == closestFaceIndex ? initialPolygonDistanceSquared :
+				distancePointPolygonSquared(polyData, map, i, closest);
+			minPolygonDistanceSquared = PxMin(minPolygonDistanceSquared, pd[i]);
+		}
+		else
+			pd[i] = PX_MAX_F32;
+	}
+
+	const PxReal maxPolygonDistance = PxSqrt(minPolygonDistanceSquared) + tolerance;
+	const PxReal maxPolygonDistanceSquared = maxPolygonDistance * maxPolygonDistance;
+
+	//third pass : select the nearby finite polygon whose normal is closest to the gjk/epa normal
+	closestFaceIndex = 0;
+	while(pd[closestFaceIndex] > maxPolygonDistanceSquared)
+		++closestFaceIndex;
+
 	Vec4V plane4 = V4LoadU(&polyData.mPolygons[closestFaceIndex].mPlane.n.x);
 	Vec3V n = Vec3V_From_Vec4V(plane4);
 	n = V3Normalize(M33TrnspsMulV3(map->shape2Vertex, n));
 	FloatV bestProj = V3Dot(n, normal);
 
-	const PxU32 firstPassIndex = closestFaceIndex;
-
 	for (PxU32 i = 0; i< polyData.mNbPolygons; ++i)
 	{
-		//if the difference between the minimum distance and the distance of p to plane i is within tolerance, we use the normal to chose the best plane 
-		if ((tolerance >(pd[i] - minDist)) && (firstPassIndex != i))
+		if((pd[i] <= maxPolygonDistanceSquared) && (closestFaceIndex != i))
 		{
 			plane4 = V4LoadU(&polyData.mPolygons[i].mPlane.n.x);
 			n = Vec3V_From_Vec4V(plane4);
